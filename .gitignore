@@ -1,0 +1,53 @@
+# =========================
+# ✅ Node Modules
+# =========================
+node_modules/
+
+# =========================
+# ✅ Environment Files
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# ✅ Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# ✅ Build / Output
+# =========================
+/frontend/.next/
+/frontend/out/
+/frontend/build/
+/backend/build/
+
+# =========================
+# ✅ System & Editor Files
+# =========================
+.DS_Store
+.fleet/
+.idea/
+.vscode/
+
+# =========================
+# ✅ Deployment / Docker
+# =========================
+render.yaml
+docker-compose.yaml
+docker-compose.yml
+
+# =========================
+# ✅ TypeScript / Next.js
+# =========================
+*.tsbuildinfo
+next-env.d.ts
+
+# =========================
+# ✅ Storybook
+storybook-static/
