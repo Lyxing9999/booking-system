@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import api from "../../lib/api";
 import { Form, Input, Button, message, Card } from "antd";
-
+import Cookies from "js-cookie";
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,12 @@ export default function LoginPage() {
       localStorage.setItem("role", user.role);
       // localStorage.setItem("token", token);
       // document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24}`;
-      document.cookie = `role=${user.role}; path=/; max-age=${60 * 60 * 24}`;
+      Cookies.set("role", user.role, {
+        expires: 1,
+        path: "/",
+        secure: true,
+        sameSite: "Lax",
+      });
       messageApi.success(res.data.message || "Login successful!");
       router.push(user.role === "admin" ? "/admin/slots" : "/user/slots");
     } catch (err) {
