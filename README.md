@@ -79,19 +79,22 @@ cd backend
 npm install
 ```
 
+---
 ## Backend Environment Variables (.env)
 
-- PORT=5000
-- MONGO_URI=mongodb://127.0.0.1:27017/booking-system
+  - PORT=5000
+  - MONGO_URI=mongodb://127.0.0.1:27017/booking-system
 
-- JWT_SECRET=YOUR_JWT_SECRET
-- JWT_REFRESH_SECRET=YOUR_JWT_REFRESH_SECRET
+  - JWT_SECRET=YOUR_JWT_SECRET
+  - JWT_REFRESH_SECRET=YOUR_JWT_REFRESH_SECRET
 
-- MAIL_HOST=smtp.example.com
-- MAIL_PORT=587
-- MAIL_USER=your_user
-- MAIL_PASS=your_pass
+  - MAIL_HOST=smtp.example.com
+  - MAIL_PORT=587
+  - MAIL_USER=your_user
+  - MAIL_PASS=your_pass
 
+
+---
 ## Run Backend
 
 ```bash
@@ -109,10 +112,11 @@ npm install
 
 ## Frontend Environment Variables (.env.local)
 
-- NEXT_PUBLIC_API_URL=http://localhost:5000
-- JWT_SECRET=your_jwt_secret
-- JWT_REFRESH_SECRET=your_jwt_refresh_secretlet
+  - NEXT_PUBLIC_API_URL=http://localhost:5000
+  - JWT_SECRET=your_jwt_secret
+  - JWT_REFRESH_SECRET=your_jwt_refresh_secretlet
 
+---
 ## Run Frontend
 
 ```bash
