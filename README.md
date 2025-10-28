@@ -32,7 +32,6 @@ Full-stack booking system with role-based authentication, slot management, and b
 - Utilities: API calls (axios), helper functions
 - Styling with Tailwind CSS + Ant Design
 
-### Environment Variables
 
 ---
 
@@ -78,7 +77,7 @@ cd booking-system
 cd backend
 npm install
 ```
-
+### Environment Variables
 ---
 ## Backend Environment Variables (.env)
 
@@ -93,6 +92,11 @@ npm install
   - MAIL_USER=your_user
   - MAIL_PASS=your_pass
 
+## Frontend Environment Variables (.env.local)
+
+  - NEXT_PUBLIC_API_URL=http://localhost:5000
+  - JWT_SECRET=your_jwt_secret
+  - JWT_REFRESH_SECRET=your_jwt_refresh_secretlet
 
 ---
 ## Run Backend
@@ -109,11 +113,6 @@ cd ../frontend
 npm install
 ```
 
-## Frontend Environment Variables (.env.local)
-
-  - NEXT_PUBLIC_API_URL=http://localhost:5000
-  - JWT_SECRET=your_jwt_secret
-  - JWT_REFRESH_SECRET=your_jwt_refresh_secretlet
 
 ---
 ## Run Frontend
@@ -159,7 +158,7 @@ npm run dev
 | PATCH  | /api/bookings/admin/{id}/status | Update booking status (Admin only) |
 | GET    | /api/bookings/admin/confirmed   | Get all confirmed bookings (Admin) |
 
-### Slots (Admin)
+### Slots 
 
 | Method | Endpoint                  | Description                                             |
 | ------ | ------------------------- | ------------------------------------------------------- |
