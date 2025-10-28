@@ -1,33 +1,29 @@
-// utils/email.js
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 
-dotenv.config({ path: "./backend/.env" });
+dotenv.config();
 
-let transporter;
+const isProd = process.env.NODE_ENV === "production";
 
-try {
-  transporter = nodemailer.createTransport({
-    host: process.env.MAIL_HOST,
-    port: Number(process.env.MAIL_PORT),
-    secure: false,
-    auth: {
-      user: process.env.MAIL_USER,
-      pass: process.env.MAIL_PASS,
-    },
-  });
+const transporter = nodemailer.createTransport({
+  host: isProd ? process.env.MAIL_HOST_PROD : process.env.MAIL_HOST_DEV,
+  port: Number(isProd ? process.env.MAIL_PORT_PROD : process.env.MAIL_PORT_DEV),
+  secure: false, // use true for 465
+  auth: {
+    user: isProd ? process.env.MAIL_USER_PROD : process.env.MAIL_USER_DEV,
+    pass: isProd ? process.env.MAIL_PASS_PROD : process.env.MAIL_PASS_DEV,
+  },
+});
 
-  transporter
-    .verify()
-    .then(() => console.log("✅ Mailer ready"))
-    .catch((err) => console.warn("⚠️ Mailer verification failed:", err));
-} catch (err) {
-  console.warn("⚠️ Failed to create transporter:", err);
-}
+transporter
+  .verify()
+  .then(() => console.log("✅ Mailer ready"))
+  .catch((err) => console.warn("⚠️ Mailer verification failed:", err));
 
-/**
- * Send a booking email (fails silently in production)
- */
+const mailFrom = isProd
+  ? process.env.MAIL_FROM_PROD
+  : process.env.MAIL_FROM_DEV;
+
 export const sendBookingEmail = async (
   to,
   name,
@@ -38,7 +34,7 @@ export const sendBookingEmail = async (
   message = ""
 ) => {
   const mailOptions = {
-    from: process.env.MAIL_FROM || '"Booking System" <noreply@booking.com>',
+    from: mailFrom,
     to,
     subject: `Booking ${status} - ${slotDate} at ${slotTime}`,
     text: `Hi ${name},
@@ -76,7 +72,7 @@ Booking System`,
     await transporter.sendMail(mailOptions);
     console.log(`✅ Booking email sent to ${to} (status: ${status})`);
   } catch (err) {
-    console.warn(
+    console.error(
       `⚠️ Failed to send booking email to ${to} (status: ${status}):`,
       err
     );

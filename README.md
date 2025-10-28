@@ -113,6 +113,7 @@ npm run dev
 ```bash
 cd ../frontend
 npm install
+
 ```
 
 
