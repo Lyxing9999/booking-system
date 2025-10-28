@@ -100,8 +100,7 @@ npm install
 ```bash
 npm run dev
 ```
-
-#Backend server runs at http://localhost:5000
+** Backend server runs at http://localhost:5000
 
 ### 3. Frontend Setup
 
@@ -123,7 +122,7 @@ npm install
 npm run dev
 ```
 
-#Frontend App runs at http://localhost:3000
+** Frontend App runs at http://localhost:3000
 
 ## API Endpoints (Overview)
 
