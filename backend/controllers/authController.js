@@ -64,7 +64,9 @@ export const loginUser = async (req, res, next) => {
         new AppError("Invalid email or password", 400, "INVALID_CREDENTIALS")
       );
     }
-
+    const isProduction =
+      process.env.NODE_ENV === "production" ||
+      process.env.NODE_ENV === "staging";
     const accessToken = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
@@ -82,7 +84,7 @@ export const loginUser = async (req, res, next) => {
 
     res.cookie("token", accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "lax",
       maxAge: 15 * 60 * 1000,
       path: "/",
@@ -90,7 +92,7 @@ export const loginUser = async (req, res, next) => {
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: "/",

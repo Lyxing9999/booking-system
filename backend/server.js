@@ -27,7 +27,7 @@ app.use(cookieParser());
 // -------------------- CORS Setup --------------------
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://booking-system-frontend-psi.vercel.app/",
+  "https://booking-system-frontend-psi.vercel.app",
 ];
 
 app.use(
