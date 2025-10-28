@@ -21,12 +21,12 @@ export default function LoginPage() {
     try {
       const res = await api.post("/auth/login", values);
       const { token, user } = res.data.data;
-      localStorage.removeItem("role");
-      localStorage.removeItem("token");
-      localStorage.setItem("role", user.role);
-      localStorage.setItem("token", token);
-      document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24}`;
-      document.cookie = `role=${user.role}; path=/; max-age=${60 * 60 * 24}`;
+      // localStorage.removeItem("role");
+      // localStorage.removeItem("token");
+      // localStorage.setItem("role", user.role);
+      // localStorage.setItem("token", token);
+      // document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24}`;
+      // document.cookie = `role=${user.role}; path=/; max-age=${60 * 60 * 24}`;
       messageApi.success(res.data.message || "Login successful!");
       router.push(user.role === "admin" ? "/admin/slots" : "/user/slots");
     } catch (err) {
