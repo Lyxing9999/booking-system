@@ -1,6 +1,5 @@
 // app/layout.js (Server Component)
 import "./globals.css";
-import "antd/dist/reset.css";
 import ClientWrapper from "./ClientWrapper";
 
 export const metadata = {

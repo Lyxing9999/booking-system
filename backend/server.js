@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
@@ -13,8 +14,9 @@ import authRoutes from "./routes/auth.js";
 import slotRoutes from "./routes/slots.js";
 import bookingRoutes from "./routes/bookings.js";
 
-// Load environment variables
-dotenv.config({ path: "./backend/.env" });
+// -------------------- Environment Variables --------------------
+// In production, Render provides env vars, no need for .env file
+dotenv.config();
 
 const app = express();
 
@@ -22,11 +24,24 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
-const corsOptions = {
-  origin: "http://localhost:3000", // frontend origin
-  credentials: true, // allow cookies
-};
-app.use(cors(corsOptions));
+// -------------------- CORS Setup --------------------
+const allowedOrigins = [
+  "http://localhost:3000", // Dev frontend
+  "https://booking-system-frontend-psi.vercel.app", // Production frontend
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS policy: Not allowed"));
+      }
+    },
+    credentials: true, // allow cookies
+  })
+);
 
 // -------------------- Routes --------------------
 app.use("/user", userRoutes);
@@ -43,12 +58,18 @@ app.use(errorHandler);
 // -------------------- Database Connection --------------------
 const connectDB = async () => {
   try {
+    if (!process.env.MONGO_URI) {
+      throw new Error("MONGO_URI is not defined in environment variables");
+    }
+
     await mongoose.connect(process.env.MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
+
+    console.log("✅ MongoDB connected");
   } catch (err) {
-    process.stderr.write(`❌ MongoDB Connection Error: ${err.message}\n`);
+    console.error(`❌ MongoDB Connection Error: ${err.message}`);
     process.exit(1);
   }
 };
@@ -58,5 +79,5 @@ connectDB();
 // -------------------- Start Server --------------------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  process.stdout.write(`⚡ Server running on port ${PORT}\n`);
+  console.log(`⚡ Server running on port ${PORT}`);
 });
