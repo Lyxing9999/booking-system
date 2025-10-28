@@ -79,8 +79,9 @@ npm install
 ```
 ### Environment Variables
 ---
-## Backend Environment Variables (.env)
 
+## Backend Environment Variables (.env)
+```
   - PORT=5000
   - MONGO_URI=mongodb://127.0.0.1:27017/booking-system
 
@@ -92,12 +93,13 @@ npm install
   - MAIL_USER=your_user
   - MAIL_PASS=your_pass
 
+```
 ## Frontend Environment Variables (.env.local)
-
+```
   - NEXT_PUBLIC_API_URL=http://localhost:5000
   - JWT_SECRET=your_jwt_secret
   - JWT_REFRESH_SECRET=your_jwt_refresh_secretlet
-
+```
 ---
 ## Run Backend
 
