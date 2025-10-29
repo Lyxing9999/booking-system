@@ -193,7 +193,7 @@ export default function UserSlotsPage() {
           rowKey="_id"
           columns={columns}
           dataSource={slots}
-          loading={loading}
+          loading={loading || isPending}
           pagination={{
             current: page,
             pageSize: limit,

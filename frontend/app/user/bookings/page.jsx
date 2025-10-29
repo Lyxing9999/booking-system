@@ -263,7 +263,7 @@ export default function UserBookingsPage() {
           rowKey="_id"
           columns={columns}
           dataSource={bookings}
-          loading={loading}
+          loading={loading || isPending}
           pagination={{
             current: page,
             pageSize: limit,
