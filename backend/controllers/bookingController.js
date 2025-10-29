@@ -1,11 +1,44 @@
+import mongoose from "mongoose";
 import Booking from "../models/Booking.js";
 import Slot from "../models/Slot.js";
 import User from "../models/User.js";
 import AppError from "../utils/errors.js";
 import { sendBookingEmail } from "../utils/mailer.js";
 import { paginatePipeline } from "../utils/mongoHelpers.js";
-/* ========================= USER BOOKINGS ========================= */
+// ============================================================
+// HELPERS
+// ============================================================
 
+/**
+ * Helper to send email and log errors, centralizing the logic.
+ * Email failures do not cause a transaction rollback.
+ * @param {object} user - The user document.
+ * @param {object} slot - The slot document.
+ * @param {object} booking - The booking document.
+ * @param {string} status - The status (Confirmed or Cancelled).
+ */
+const sendUpdateEmail = async (user, slot, booking, status) => {
+  if (user?.email) {
+    try {
+      await sendBookingEmail(
+        user.email,
+        user.name,
+        slot.date,
+        slot.time,
+        booking.orderId,
+        status
+      );
+    } catch (err) {
+      // Log the email failure but do not throw/break the main flow.
+      console.error(
+        `Failed to send email to ${user.email} for ${status} status:`,
+        err
+      );
+    }
+  }
+};
+
+/* ========================= USER BOOKINGS ========================= */
 // ============================================================
 // @desc    Create booking
 // @route   POST /api/bookings
@@ -199,110 +232,102 @@ export const deleteBooking = async (req, res, next) => {
 // ============================================================
 
 export const updateBookingStatus = async (req, res, next) => {
+  if (req.user.role !== "admin")
+    return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+
+  const { status } = req.body;
+  const bookingId = req.params.id;
+
+  let session;
   try {
-    if (req.user.role !== "admin")
-      return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+    session = await mongoose.startSession();
+    await session.withTransaction(async () => {
+      const booking = await Booking.findById(bookingId).session(session);
+      if (!booking) {
+        throw new AppError("Booking not found", 404, "BOOKING_NOT_FOUND");
+      }
 
-    const { status } = req.body;
-    const bookingId = req.params.id;
+      const slot = await Slot.findById(booking.slotId).session(session);
+      if (!slot) {
+        throw new AppError("Slot not found", 404, "SLOT_NOT_FOUND");
+      }
 
-    const booking = await Booking.findById(bookingId);
-    if (!booking)
-      return next(new AppError("Booking not found", 404, "BOOKING_NOT_FOUND"));
+      if (status === "confirmed") {
+        const existingConfirmed = await Booking.findOne({
+          slotId: booking.slotId,
+          status: "confirmed",
+          _id: { $ne: booking._id },
+        }).session(session);
 
-    const slot = await Slot.findById(booking.slotId);
-    if (!slot)
-      return next(new AppError("Slot not found", 404, "SLOT_NOT_FOUND"));
+        if (existingConfirmed) {
+          throw new new AppError(
+            "Slot already confirmed",
+            400,
+            "SLOT_ALREADY_CONFIRMED"
+          )();
+        }
 
-    // Handle confirmed status
-    if (status === "confirmed") {
-      const existingConfirmed = await Booking.findOne({
-        slotId: booking.slotId,
-        status: "confirmed",
-        _id: { $ne: booking._id },
-      });
+        booking.status = "confirmed";
+        await booking.save({ session });
 
-      if (existingConfirmed)
-        return next(
-          new AppError("Slot already confirmed", 400, "SLOT_ALREADY_CONFIRMED")
-        );
+        const otherBookings = await Booking.find({
+          slotId: booking.slotId,
+          _id: { $ne: booking._id },
+          status: { $ne: "cancelled" },
+        }).session(session);
 
-      booking.status = "confirmed";
-      await booking.save();
-      const otherBookings = await Booking.find({
-        slotId: booking.slotId,
-        _id: { $ne: booking._id },
-        status: { $ne: "cancelled" },
-      }).lean();
+        const otherBookingIds = otherBookings.map((b) => b._id);
 
-      await Promise.all(
-        otherBookings.map(async (b) => {
-          await Booking.findByIdAndUpdate(b._id, { status: "cancelled" });
-
-          const user = await User.findById(b.userId);
-          if (user?.email) {
-            try {
-              await sendBookingEmail(
-                user.email,
-                user.name,
-                slot.date,
-                slot.time,
-                b.orderId,
-                "Cancelled"
-              );
-            } catch (err) {
-              console.error(`Failed to send email to ${user.email}:`, err);
-            }
-          }
-        })
-      );
-
-      const user = await User.findById(booking.userId);
-      if (user?.email) {
-        try {
-          await sendBookingEmail(
-            user.email,
-            user.name,
-            slot.date,
-            slot.time,
-            booking.orderId,
-            "Confirmed"
+        if (otherBookingIds.length > 0) {
+          await Booking.updateMany(
+            { _id: { $in: otherBookingIds } },
+            { status: "cancelled" },
+            { session }
           );
-        } catch (err) {
-          console.error(`Failed to send email to ${user.email}:`, err);
+        }
+
+        const primaryUser = await User.findById(booking.userId);
+        await sendUpdateEmail(primaryUser, slot, booking, "Confirmed");
+
+        await Promise.all(
+          otherBookings.map(async (b) => {
+            const user = await User.findById(b.userId);
+            await sendUpdateEmail(user, slot, b, "Cancelled");
+          })
+        );
+      } else {
+        if (!["cancelled", "pending"].includes(status)) {
+          throw new AppError(
+            `Invalid status provided: ${status}`,
+            400,
+            "INVALID_STATUS"
+          );
+        }
+
+        booking.status = status;
+        await booking.save({ session });
+
+        if (status === "cancelled") {
+          const user = await User.findById(booking.userId);
+          await sendUpdateEmail(user, slot, booking, "Cancelled");
         }
       }
-    }
-    // Handle cancelled or pending
-    else {
-      booking.status = status;
-      await booking.save();
 
-      if (status === "cancelled") {
-        const user = await User.findById(booking.userId);
-        if (user?.email) {
-          try {
-            await sendBookingEmail(
-              user.email,
-              user.name,
-              slot.date,
-              slot.time,
-              booking.orderId,
-              "Cancelled"
-            );
-          } catch (err) {
-            console.error(`Failed to send email to ${user.email}:`, err);
-          }
-        }
-      }
-    }
-
-    res.json({
-      success: true,
-      message: `Booking status updated to ${status}`,
-      booking,
+      res.json({
+        success: true,
+        message: `Booking status updated to ${status}`,
+        booking,
+      });
     });
   } catch (err) {
+    if (session) {
+      await session.abortTransaction();
+      session.endSession();
+    }
+    if (err instanceof AppError) {
+      return next(err);
+    }
+
     console.error("Error in updateBookingStatus:", err);
     next(
       new AppError(
@@ -311,6 +336,10 @@ export const updateBookingStatus = async (req, res, next) => {
         "UPDATE_BOOKING_STATUS_FAILED"
       )
     );
+  } finally {
+    if (session && session.inTransaction() === false) {
+      session.endSession();
+    }
   }
 };
 

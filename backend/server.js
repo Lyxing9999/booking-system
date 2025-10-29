@@ -15,7 +15,7 @@ import slotRoutes from "./routes/slots.js";
 import bookingRoutes from "./routes/bookings.js";
 
 // -------------------- Environment Variables --------------------
-// In production, Render provides env vars, no need for .env file
+
 dotenv.config();
 
 const app = express();

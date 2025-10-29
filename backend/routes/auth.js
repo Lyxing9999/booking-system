@@ -81,7 +81,7 @@ router.post("/login", loginUser);
  *         description: Access token refreshed successfully
  */
 router.post("/refresh", refreshToken);
-
+router.post("/refresh-token", refreshToken);
 /**
  * @swagger
  * /auth/logout:

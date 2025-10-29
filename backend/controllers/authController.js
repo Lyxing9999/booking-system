@@ -147,6 +147,17 @@ export const refreshToken = async (req, res, next) => {
       process.env.JWT_SECRET,
       { expiresIn: "15m" } // new access token
     );
+    const isProduction =
+      process.env.NODE_ENV === "production" ||
+      process.env.NODE_ENV === "staging";
+
+    res.cookie("token", newAccessToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "none",
+      maxAge: 15 * 60 * 1000,
+      path: "/",
+    });
 
     res.json({
       status: "success",
