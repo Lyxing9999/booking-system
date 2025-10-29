@@ -13,17 +13,8 @@ export const refreshAccessToken = async () => {
         { withCredentials: true }
       )
       .then((res) => {
-        const { accessToken } = res.data;
-
-        if (accessToken) {
-          localStorage.setItem("token", accessToken);
-          refreshingToken = null;
-          return accessToken;
-        } else {
-          window.location.href = "/auth/login";
-          refreshingToken = null;
-          return null;
-        }
+        refreshingToken = null;
+        return res.data.success ? true : (window.location.href = "/auth/login");
       })
       .catch((err) => {
         console.error("Refresh token failed:", err);
