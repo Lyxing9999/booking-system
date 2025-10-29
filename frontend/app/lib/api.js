@@ -1,5 +1,5 @@
 import axios from "axios";
-import { tryRefreshToken } from "../utils/auth";
+import { refreshAccessToken } from "./refreshToken";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL,
@@ -20,7 +20,7 @@ api.interceptors.response.use(
     const originalRequest = err.config;
     if (err.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
-      const newToken = await tryRefreshToken();
+      const newToken = await refreshAccessToken();
       if (newToken) {
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);
