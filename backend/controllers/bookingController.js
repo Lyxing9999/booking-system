@@ -213,54 +213,55 @@ export const updateBookingStatus = async (req, res, next) => {
     if (!slot)
       return next(new AppError("Slot not found", 404, "SLOT_NOT_FOUND"));
 
-    if (status === "confirmed") {
-      const existingConfirmed = await Booking.findOne({
-        slotId: booking.slotId,
-        status: "confirmed",
-        _id: { $ne: booking._id },
-      });
+    booking.status = status;
+    await booking.save();
 
-      if (existingConfirmed)
-        return next(
-          new AppError("Slot already confirmed", 400, "SLOT_ALREADY_CONFIRMED")
-        );
+    res.json({
+      success: true,
+      message: `Booking status updated to ${status}`,
+      booking,
+    });
 
-      booking.status = "confirmed";
-      await booking.save();
+    (async () => {
+      try {
+        if (status === "confirmed") {
+          const existingConfirmed = await Booking.findOne({
+            slotId: booking.slotId,
+            status: "confirmed",
+            _id: { $ne: booking._id },
+          });
 
-      await Booking.updateMany(
-        {
-          slotId: booking.slotId,
-          _id: { $ne: booking._id },
-          status: { $ne: "cancelled" },
-        },
-        { $set: { status: "cancelled" } }
-      );
+          if (existingConfirmed) {
+            console.warn(
+              `Slot ${booking.slotId} already confirmed, skipping re-confirm`
+            );
+            return;
+          }
 
-      const otherBookings = await Booking.find({
-        slotId: booking.slotId,
-        _id: { $ne: booking._id },
-        status: "cancelled",
-      }).lean();
+          await Booking.updateMany(
+            {
+              slotId: booking.slotId,
+              _id: { $ne: booking._id },
+              status: { $ne: "cancelled" },
+            },
+            { $set: { status: "cancelled" } }
+          );
 
-      const userIds = [
-        booking.userId,
-        ...otherBookings.map((b) => b.userId),
-      ].filter(Boolean);
+          const otherBookings = await Booking.find({
+            slotId: booking.slotId,
+            _id: { $ne: booking._id },
+          }).lean();
 
-      const users = await User.find({ _id: { $in: userIds } }).lean();
-      const userMap = Object.fromEntries(
-        users.map((u) => [u._id.toString(), u])
-      );
+          const userIds = [
+            booking.userId,
+            ...otherBookings.map((b) => b.userId),
+          ].filter(Boolean);
 
-      res.json({
-        success: true,
-        message: `Booking status updated to ${status}`,
-        booking,
-      });
+          const users = await User.find({ _id: { $in: userIds } }).lean();
+          const userMap = Object.fromEntries(
+            users.map((u) => [u._id.toString(), u])
+          );
 
-      (async () => {
-        try {
           const confirmedUser = userMap[booking.userId.toString()];
           if (confirmedUser?.email) {
             await sendBookingEmail(
@@ -288,40 +289,23 @@ export const updateBookingStatus = async (req, res, next) => {
               }
             })
           );
-        } catch (err) {
-          console.error("Email sending failed:", err);
-        }
-      })();
-    } else {
-      booking.status = status;
-      await booking.save();
-
-      res.json({
-        success: true,
-        message: `Booking status updated to ${status}`,
-        booking,
-      });
-
-      if (status === "cancelled") {
-        (async () => {
-          try {
-            const user = await User.findById(booking.userId);
-            if (user?.email) {
-              await sendBookingEmail(
-                user.email,
-                user.name,
-                slot.date,
-                slot.time,
-                booking.orderId,
-                "Cancelled"
-              );
-            }
-          } catch (err) {
-            console.error("Failed to send cancellation email:", err);
+        } else if (status === "cancelled") {
+          const user = await User.findById(booking.userId);
+          if (user?.email) {
+            await sendBookingEmail(
+              user.email,
+              user.name,
+              slot.date,
+              slot.time,
+              booking.orderId,
+              "Cancelled"
+            );
           }
-        })();
+        }
+      } catch (err) {
+        console.error("Background task failed:", err);
       }
-    }
+    })();
   } catch (err) {
     console.error("Error in updateBookingStatus:", err);
     next(
