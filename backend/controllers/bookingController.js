@@ -1,44 +1,11 @@
-import mongoose from "mongoose";
 import Booking from "../models/Booking.js";
 import Slot from "../models/Slot.js";
 import User from "../models/User.js";
 import AppError from "../utils/errors.js";
 import { sendBookingEmail } from "../utils/mailer.js";
 import { paginatePipeline } from "../utils/mongoHelpers.js";
-// ============================================================
-// HELPERS
-// ============================================================
-
-/**
- * Helper to send email and log errors, centralizing the logic.
- * Email failures do not cause a transaction rollback.
- * @param {object} user - The user document.
- * @param {object} slot - The slot document.
- * @param {object} booking - The booking document.
- * @param {string} status - The status (Confirmed or Cancelled).
- */
-const sendUpdateEmail = async (user, slot, booking, status) => {
-  if (user?.email) {
-    try {
-      await sendBookingEmail(
-        user.email,
-        user.name,
-        slot.date,
-        slot.time,
-        booking.orderId,
-        status
-      );
-    } catch (err) {
-      // Log the email failure but do not throw/break the main flow.
-      console.error(
-        `Failed to send email to ${user.email} for ${status} status:`,
-        err
-      );
-    }
-  }
-};
-
 /* ========================= USER BOOKINGS ========================= */
+
 // ============================================================
 // @desc    Create booking
 // @route   POST /api/bookings
@@ -230,104 +197,132 @@ export const deleteBooking = async (req, res, next) => {
 // @route   PATCH /api/admin/bookings/:id/status
 // @access  Admin
 // ============================================================
-
 export const updateBookingStatus = async (req, res, next) => {
-  if (req.user.role !== "admin")
-    return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
-
-  const { status } = req.body;
-  const bookingId = req.params.id;
-
-  let session;
   try {
-    session = await mongoose.startSession();
-    await session.withTransaction(async () => {
-      const booking = await Booking.findById(bookingId).session(session);
-      if (!booking) {
-        throw new AppError("Booking not found", 404, "BOOKING_NOT_FOUND");
-      }
+    if (req.user.role !== "admin")
+      return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
 
-      const slot = await Slot.findById(booking.slotId).session(session);
-      if (!slot) {
-        throw new AppError("Slot not found", 404, "SLOT_NOT_FOUND");
-      }
+    const { status } = req.body;
+    const bookingId = req.params.id;
 
-      if (status === "confirmed") {
-        const existingConfirmed = await Booking.findOne({
-          slotId: booking.slotId,
-          status: "confirmed",
-          _id: { $ne: booking._id },
-        }).session(session);
+    const booking = await Booking.findById(bookingId);
+    if (!booking)
+      return next(new AppError("Booking not found", 404, "BOOKING_NOT_FOUND"));
 
-        if (existingConfirmed) {
-          throw new new AppError(
-            "Slot already confirmed",
-            400,
-            "SLOT_ALREADY_CONFIRMED"
-          )();
-        }
+    const slot = await Slot.findById(booking.slotId);
+    if (!slot)
+      return next(new AppError("Slot not found", 404, "SLOT_NOT_FOUND"));
 
-        booking.status = "confirmed";
-        await booking.save({ session });
+    if (status === "confirmed") {
+      const existingConfirmed = await Booking.findOne({
+        slotId: booking.slotId,
+        status: "confirmed",
+        _id: { $ne: booking._id },
+      });
 
-        const otherBookings = await Booking.find({
+      if (existingConfirmed)
+        return next(
+          new AppError("Slot already confirmed", 400, "SLOT_ALREADY_CONFIRMED")
+        );
+
+      booking.status = "confirmed";
+      await booking.save();
+
+      await Booking.updateMany(
+        {
           slotId: booking.slotId,
           _id: { $ne: booking._id },
           status: { $ne: "cancelled" },
-        }).session(session);
+        },
+        { $set: { status: "cancelled" } }
+      );
 
-        const otherBookingIds = otherBookings.map((b) => b._id);
+      const otherBookings = await Booking.find({
+        slotId: booking.slotId,
+        _id: { $ne: booking._id },
+        status: "cancelled",
+      }).lean();
 
-        if (otherBookingIds.length > 0) {
-          await Booking.updateMany(
-            { _id: { $in: otherBookingIds } },
-            { status: "cancelled" },
-            { session }
-          );
-        }
+      const userIds = [
+        booking.userId,
+        ...otherBookings.map((b) => b.userId),
+      ].filter(Boolean);
 
-        const primaryUser = await User.findById(booking.userId);
-        await sendUpdateEmail(primaryUser, slot, booking, "Confirmed");
-
-        await Promise.all(
-          otherBookings.map(async (b) => {
-            const user = await User.findById(b.userId);
-            await sendUpdateEmail(user, slot, b, "Cancelled");
-          })
-        );
-      } else {
-        if (!["cancelled", "pending"].includes(status)) {
-          throw new AppError(
-            `Invalid status provided: ${status}`,
-            400,
-            "INVALID_STATUS"
-          );
-        }
-
-        booking.status = status;
-        await booking.save({ session });
-
-        if (status === "cancelled") {
-          const user = await User.findById(booking.userId);
-          await sendUpdateEmail(user, slot, booking, "Cancelled");
-        }
-      }
+      const users = await User.find({ _id: { $in: userIds } }).lean();
+      const userMap = Object.fromEntries(
+        users.map((u) => [u._id.toString(), u])
+      );
 
       res.json({
         success: true,
         message: `Booking status updated to ${status}`,
         booking,
       });
-    });
-  } catch (err) {
-    if (session) {
-      await session.abortTransaction();
-      session.endSession();
-    }
-    if (err instanceof AppError) {
-      return next(err);
-    }
 
+      (async () => {
+        try {
+          const confirmedUser = userMap[booking.userId.toString()];
+          if (confirmedUser?.email) {
+            await sendBookingEmail(
+              confirmedUser.email,
+              confirmedUser.name,
+              slot.date,
+              slot.time,
+              booking.orderId,
+              "Confirmed"
+            );
+          }
+
+          await Promise.all(
+            otherBookings.map(async (b) => {
+              const u = userMap[b.userId.toString()];
+              if (u?.email) {
+                await sendBookingEmail(
+                  u.email,
+                  u.name,
+                  slot.date,
+                  slot.time,
+                  b.orderId,
+                  "Cancelled"
+                );
+              }
+            })
+          );
+        } catch (err) {
+          console.error("Email sending failed:", err);
+        }
+      })();
+    } else {
+      booking.status = status;
+      await booking.save();
+
+      res.json({
+        success: true,
+        message: `Booking status updated to ${status}`,
+        booking,
+      });
+
+      if (status === "cancelled") {
+        (async () => {
+          try {
+            const user = await User.findById(booking.userId);
+            if (user?.email) {
+              await sendBookingEmail(
+                user.email,
+                user.name,
+                slot.date,
+                slot.time,
+                booking.orderId,
+                "Cancelled"
+              );
+            }
+          } catch (err) {
+            console.error("Failed to send cancellation email:", err);
+          }
+        })();
+      }
+    }
+  } catch (err) {
     console.error("Error in updateBookingStatus:", err);
     next(
       new AppError(
@@ -336,13 +331,8 @@ export const updateBookingStatus = async (req, res, next) => {
         "UPDATE_BOOKING_STATUS_FAILED"
       )
     );
-  } finally {
-    if (session && session.inTransaction() === false) {
-      session.endSession();
-    }
   }
 };
-
 // ============================================================
 // @desc    Get all bookings (Admin view, paginated, searchable)
 // @route   GET /api/admin/bookings

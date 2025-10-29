@@ -24,7 +24,7 @@ export default function LoginPage() {
       localStorage.removeItem("role");
       // localStorage.removeItem("token");
       localStorage.setItem("role", user.role);
-      // localStorage.setItem("token", token);
+      localStorage.setItem("token", token);
       // document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24}`;
       Cookies.set("role", user.role, {
         expires: 1,
