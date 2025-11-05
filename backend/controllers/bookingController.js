@@ -317,12 +317,12 @@ export const updateBookingStatus = async (req, res, next) => {
     );
   }
 };
+
 // ============================================================
 // @desc    Get all bookings (Admin view, paginated, searchable)
 // @route   GET /api/admin/bookings
 // @access  Admin
 // ============================================================
-
 export const getAdminBookings = async (req, res, next) => {
   try {
     if (req.user.role !== "admin")

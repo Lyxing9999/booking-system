@@ -153,7 +153,7 @@ export default function UserSlotsPage() {
     <DashboardLayout role="user">
       {contextHolder}
       <div className="p-6">
-        <Space className="mb-6">
+        <Space className="mb-6" wrap size={[8, 8]}>
           <Button type="primary" onClick={() => navigate("/user/slots")}>
             Available Slots
           </Button>
@@ -163,7 +163,7 @@ export default function UserSlotsPage() {
         <h2 className="text-2xl font-semibold mb-4">Available Slots</h2>
 
         {/* Filters */}
-        <Space className="mb-4">
+        <Space className="mb-4" wrap size={[8, 8]}>
           <DatePicker value={filterDate} onChange={setFilterDate} placeholder="Filter by date" />
           <Input
             placeholder="Search time"

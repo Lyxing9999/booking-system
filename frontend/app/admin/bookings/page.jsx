@@ -151,7 +151,7 @@ export default function AdminBookingsPage() {
         {contextHolder}
         <div className="p-6">
           {/* Navigation */}
-          <Space className="mb-6">
+          <Space className="mb-6" wrap size={[8, 8]}>
             <Button onClick={() => navigate("/admin/users")}>Users</Button>
             <Button onClick={() => navigate("/admin/slots")}>Slots</Button>
             <Button type="primary" onClick={() => navigate("/admin/bookings")}>All Bookings</Button>
@@ -161,7 +161,7 @@ export default function AdminBookingsPage() {
           <h2 className="text-2xl font-semibold mb-4">Bookings</h2>
 
           {/* Filters */}
-          <Space className="mb-4" wrap>
+          <Space className="mb-4" wrap size={[8, 8]}>
             <DatePicker value={filterDate} onChange={setFilterDate} placeholder="Filter by date" />
             <Input
               value={searchText}

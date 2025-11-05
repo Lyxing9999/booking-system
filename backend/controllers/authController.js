@@ -152,7 +152,7 @@ export const refreshToken = async (req, res, next) => {
       process.env.NODE_ENV === "staging";
 
     res.cookie("token", newAccessToken, {
-      httpOnly: true,
+      httpOnly: true, 
       secure: isProduction,
       sameSite: "none",
       maxAge: 15 * 60 * 1000,

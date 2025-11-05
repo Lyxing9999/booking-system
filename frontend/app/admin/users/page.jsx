@@ -161,7 +161,7 @@ export default function AdminUsersPage() {
       {contextHolder}
       <div className="p-6">
         {/* Navigation */}
-        <Space className="mb-6">
+        <Space className="mb-6" wrap size={[8, 8]}>
           <Button type="primary" onClick={() => navigate("/admin/users")}>Users</Button>
           <Button onClick={() => navigate("/admin/slots")}>Slots</Button>
           <Button onClick={() => navigate("/admin/bookings")}>All Bookings</Button>
@@ -171,7 +171,7 @@ export default function AdminUsersPage() {
         <h2 className="text-2xl font-semibold mb-4">Users</h2>
 
         {/* Actions */}
-        <Space className="mb-4">
+        <Space className="mb-4" wrap size={[8, 8]}>
           <Input
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}

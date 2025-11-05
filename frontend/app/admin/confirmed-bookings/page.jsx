@@ -106,7 +106,7 @@ export default function AdminConfirmedBookingsPage() {
       {contextHolder}
       <div className="p-6">
         {/* Navigation */}
-        <Space className="mb-6">
+        <Space className="mb-6" wrap size={[8, 8]}>
           <Button onClick={() => navigate("/admin/users")}>Users</Button>
           <Button onClick={() => navigate("/admin/slots")}>Slots</Button>
           <Button onClick={() => navigate("/admin/bookings")}>All Bookings</Button>
@@ -118,7 +118,7 @@ export default function AdminConfirmedBookingsPage() {
         <h2 className="text-2xl font-semibold mb-4">Confirmed Bookings</h2>
 
         {/* Filters */}
-        <Space wrap className="mb-4">
+        <Space wrap className="mb-4" size={[8, 8]}>
           <DatePicker
             value={filterDate ? dayjs(filterDate) : null}
             onChange={setFilterDate}

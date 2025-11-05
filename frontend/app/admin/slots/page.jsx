@@ -208,7 +208,7 @@ export default function AdminSlotsPage() {
       <div className="p-6">
         {contextHolder}
 
-        <Space className="mb-6">
+        <Space className="mb-6" wrap size={[8, 8]}>
           <Button onClick={() => navigate("/admin/users")}>Users</Button>
           <Button type="primary" onClick={() => navigate("/admin/slots")}>Slots</Button>
           <Button onClick={() => navigate("/admin/bookings")}>All Bookings</Button>
@@ -217,7 +217,7 @@ export default function AdminSlotsPage() {
 
         <h2 className="text-2xl font-semibold mb-4">Slots</h2>
 
-        <Space className="mb-4">
+        <Space className="mb-4" wrap size={[8, 8]}>
           <DatePicker
             value={selectedDate ? dayjs(selectedDate) : null}
             onChange={(date) => setSelectedDate(date ? date.format("YYYY-MM-DD") : null)}
