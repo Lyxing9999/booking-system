@@ -102,7 +102,7 @@ export default function AdminBookingsPage() {
   const statusColors = { pending: "orange", confirmed: "green", cancelled: "red" };
 
   const columns = [
-    { title: "Order ID", dataIndex: "orderId" },
+    { title: "Order ID", dataIndex: "orderId"  },
     { title: "User", dataIndex: ["user", "name"] },
     { title: "Email", dataIndex: ["user", "email"] },
     { title: "Date", dataIndex: ["slot", "date"] },
@@ -200,6 +200,7 @@ export default function AdminBookingsPage() {
             }}
             bordered
             size="middle"
+            scroll={{ x: 'max-content' }}
           />
         </div>
       </DashboardLayout>

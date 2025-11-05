@@ -197,6 +197,7 @@ export default function AdminUsersPage() {
           }}
           bordered
           size="middle"
+          scroll={{ x: 'max-content' }}
         />
 
         {/* Modal for Create/Edit */}

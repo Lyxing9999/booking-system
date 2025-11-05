@@ -150,6 +150,7 @@ export default function AdminConfirmedBookingsPage() {
           }}
           bordered
           size="middle"
+          scroll={{ x: 'max-content' }}
         />
       </div>
     </DashboardLayout>

@@ -259,6 +259,7 @@ export default function AdminSlotsPage() {
           }}
           bordered
           size="middle"
+          scroll={{ x: 'max-content' }}
         />
 
         <Modal

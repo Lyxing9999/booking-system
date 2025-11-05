@@ -203,6 +203,7 @@ export default function UserSlotsPage() {
           }}
           bordered
           size="middle"
+          scroll={{ x: 'max-content' }}
         />
 
         {/* Booking Modal */}

@@ -273,6 +273,7 @@ export default function UserBookingsPage() {
           }}
           bordered
           size="middle"
+          scroll={{ x: 'max-content' }}
         />
       </div>
 
