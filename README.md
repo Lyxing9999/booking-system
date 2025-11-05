@@ -14,6 +14,14 @@ Full-stack booking system with role-based authentication, slot management, and b
 - **Documentation:** Swagger for API
 
 ---
+## Admin Account (Demo)
+
+You can use the following admin account to explore full features:
+
+- **Email:** admin@email.com
+- **Password:** 123
+
+> ⚠️ This admin account is for demo purposes only. Do not use it in production.
 
 ## Project Structure
 
