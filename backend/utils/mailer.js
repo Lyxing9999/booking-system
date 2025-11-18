@@ -15,10 +15,12 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-transporter
-  .verify()
-  .then(() => console.log("✅ Mailer ready"))
-  .catch((err) => console.warn("⚠️ Mailer verification failed:", err));
+if (process.env.NODE_ENV !== "test") {
+  transporter
+    .verify()
+    .then(() => console.log("✅ Mailer ready"))
+    .catch((err) => console.warn("⚠️ Mailer verification failed:", err));
+}
 
 const mailFrom = isProd
   ? process.env.MAIL_FROM_PROD

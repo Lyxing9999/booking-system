@@ -16,7 +16,7 @@ import bookingRoutes from "./routes/bookings.js";
 
 // -------------------- Environment Variables --------------------
 
-dotenv.config();
+dotenv.config({ path: "./backend/.env" });
 
 const app = express();
 
@@ -75,10 +75,12 @@ const connectDB = async () => {
   }
 };
 
-connectDB();
-
 // -------------------- Start Server --------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`⚡ Server running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== "test") {
+  connectDB();
+  app.listen(PORT, () => {
+    console.log(`⚡ Server running on port ${PORT}`);
+  });
+}
+export default app;

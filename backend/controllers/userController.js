@@ -279,15 +279,31 @@ export const deleteUser = async (req, res, next) => {
     if (!user)
       return next(new AppError("User not found", 404, "USER_NOT_FOUND"));
 
+    // Find all bookings of this user
+    const userBookings = await Booking.find({ userId: id });
+
+    // Keep track of slots that were booked by this user
+    const affectedSlotIds = userBookings.map((b) => b.slotId);
+
     // Delete the user
     await user.deleteOne();
 
     // Delete all bookings for that user
     await Booking.deleteMany({ userId: id });
 
+    // Restore auto-canceled bookings for affected slots
+    await Booking.updateMany(
+      {
+        slotId: { $in: affectedSlotIds },
+        status: "cancelled",
+      },
+      { $set: { status: "pending" } }
+    );
+
     res.json({
       success: true,
-      message: "User and related bookings deleted successfully",
+      message:
+        "User deleted, related bookings removed, auto-cancelled bookings restored",
     });
   } catch (err) {
     next(new AppError("Failed to delete user", 500, "DELETE_USER_FAILED"));
