@@ -6,28 +6,24 @@ export const refreshAccessToken = async () => {
   try {
     if (refreshingToken) return await refreshingToken;
 
-    refreshingToken = axios
-      .post(
+    refreshingToken = (async () => {
+      const res = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
         {},
         { withCredentials: true }
-      )
-      .then((res) => {
-        refreshingToken = null;
-        return res.data.success ? true : (window.location.href = "/auth/login");
-      })
-      .catch((err) => {
-        console.error("Refresh token failed:", err);
-        window.location.href = "/auth/login";
-        refreshingToken = null;
-        return null;
-      });
+      );
+
+      refreshingToken = null;
+
+      // Return access token if backend sends it
+      return res.data?.accessToken || true;
+    })();
 
     return await refreshingToken;
   } catch (err) {
-    console.error("Unexpected refresh error:", err);
-    window.location.href = "/auth/login";
+    console.error("Refresh token failed:", err);
     refreshingToken = null;
+    window.location.href = "/auth/login";
     return null;
   }
 };

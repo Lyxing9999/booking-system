@@ -21,23 +21,27 @@ export default function LoginPage() {
     try {
       const res = await api.post("/auth/login", values);
       const { token, user } = res.data.data;
-      localStorage.removeItem("role");
-      // localStorage.removeItem("token");
-      localStorage.setItem("role", user.role);
-      localStorage.setItem("token", token);
-      // document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24}`;
+
+      // save token (frontend only)
+      document.cookie = `token=${token}; path=/; max-age=${
+        60 * 60 * 24
+      }; SameSite=Lax`;
+
+      // save role
       Cookies.set("role", user.role, {
         expires: 1,
         path: "/",
-        secure: true,
-        sameSite: "Lax",
+        sameSite: "Lax", // secure ONLY if https
       });
+
       messageApi.success(res.data.message || "Login successful!");
+
+      // redirect based on role
       router.push(user.role === "admin" ? "/admin/slots" : "/user/slots");
     } catch (err) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("role");
-      console.error(err);
+      // clear token
+      document.cookie =
+        "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
       messageApi.error(
         err.response?.data?.message || "Something went wrong. Try again."
       );
