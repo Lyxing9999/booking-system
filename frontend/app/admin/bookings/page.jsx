@@ -2,16 +2,27 @@
 
 import { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Table, Button, DatePicker, Input, Space, message, Tag, Select } from "antd";
+import {
+  Table,
+  Button,
+  DatePicker,
+  Input,
+  Space,
+  message,
+  Tag,
+  Select,
+  Avatar,
+  Modal,
+} from "antd";
 
 import api from "../../lib/api";
 import DashboardLayout from "../../components/DashboardLayout";
 import AntdWarningSuppressor from "../../ClientWrapper";
+import { getGameImageUrl, formatPrice } from "../../utils/image";
 
 export default function AdminBookingsPage() {
   const router = useRouter();
 
-  // ---------------- State ----------------
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -25,6 +36,8 @@ export default function AdminBookingsPage() {
 
   const [isPending, startTransition] = useTransition();
   const [loadingRows, setLoadingRows] = useState({});
+  const [cancelModal, setCancelModal] = useState({ open: false, booking: null });
+  const [cancelReason, setCancelReason] = useState("");
 
   const [messageApi, contextHolder] = message.useMessage();
   const notify = {
@@ -32,8 +45,12 @@ export default function AdminBookingsPage() {
     error: (text) => messageApi.error(text, 3),
   };
 
-  // ---------------- Fetch Bookings ----------------
-  const fetchBookings = async ({ pageNum = 1, date = filterDate, search = searchText, status = statusFilter } = {}) => {
+  const fetchBookings = async ({
+    pageNum = 1,
+    date = filterDate,
+    search = searchText,
+    status = statusFilter,
+  } = {}) => {
     try {
       setLoading(true);
       const params = new URLSearchParams({ page: pageNum, limit });
@@ -43,20 +60,18 @@ export default function AdminBookingsPage() {
 
       const { data } = await api.get(`/bookings/admin?${params.toString()}`);
       setBookings(data.bookings || []);
-      setTotal(data.total || data.count || (data.bookings ? data.bookings.length : 0));
+      setTotal(data.total || 0);
       setPage(pageNum);
     } catch (err) {
-      notify.error(err?.message || "Failed to fetch bookings");
+      notify.error(err?.response?.data?.message || "Failed to fetch bookings");
     } finally {
       setLoading(false);
     }
   };
 
-  // ---------------- Debounce Hook ----------------
   const useDebounce = (value, delay = 300) => {
     const [debounced, setDebounced] = useState(value);
     useEffect(() => {
-      setLoading(true);
       const handler = setTimeout(() => setDebounced(value), delay);
       return () => clearTimeout(handler);
     }, [value, delay]);
@@ -67,12 +82,15 @@ export default function AdminBookingsPage() {
   const debouncedDate = useDebounce(filterDate);
   const debouncedStatus = useDebounce(statusFilter);
 
-  // ---------------- Effects ----------------
   useEffect(() => {
-    fetchBookings({ pageNum: 1, date: debouncedDate, search: debouncedSearch, status: debouncedStatus });
+    fetchBookings({
+      pageNum: 1,
+      date: debouncedDate,
+      search: debouncedSearch,
+      status: debouncedStatus,
+    });
   }, [debouncedSearch, debouncedDate, debouncedStatus]);
 
-  // ---------------- Actions ----------------
   const handleReset = () => {
     setFilterDate(null);
     setSearchText("");
@@ -81,56 +99,113 @@ export default function AdminBookingsPage() {
     fetchBookings({ pageNum: 1, date: null, search: "", status: null });
   };
 
-  const updateBookingStatus = async (id, status) => {
+  const updateBookingStatus = async (id, status, cancelledReason = "") => {
     try {
-      setLoadingRows(prev => ({ ...prev, [id]: true }));
-  
-      const { data } = await api.patch(`/bookings/admin/${id}/status`, { status });
+      setLoadingRows((prev) => ({ ...prev, [id]: true }));
 
-      setBookings(prev => prev.map(b => (b._id === id ? { ...b, status: data.status } : b)));
+      const body = { status };
+      if (status === "cancelled" && cancelledReason) {
+        body.cancelledReason = cancelledReason;
+      }
+
+      await api.patch(`/bookings/admin/${id}/status`, body);
       notify.success(`Booking ${status}`);
-  
       fetchBookings({ pageNum: page });
     } catch (err) {
       notify.error(err?.response?.data?.message || "Failed to update booking");
     } finally {
-      setLoadingRows(prev => ({ ...prev, [id]: false }));
+      setLoadingRows((prev) => ({ ...prev, [id]: false }));
     }
   };
 
-  // ---------------- Constants ----------------
+  const openCancelModal = (booking) => {
+    setCancelModal({ open: true, booking });
+    setCancelReason("");
+  };
+
+  const confirmAdminCancel = async () => {
+    const { booking } = cancelModal;
+    if (!booking) return;
+    await updateBookingStatus(booking._id, "cancelled", cancelReason);
+    setCancelModal({ open: false, booking: null });
+  };
+
   const statusColors = { pending: "orange", confirmed: "green", cancelled: "red" };
 
   const columns = [
-    { title: "Order ID", dataIndex: "orderId"  },
+    {
+      title: "Order ID",
+      dataIndex: "orderId",
+      render: (id) => <span className="text-muted" style={{ fontSize: 12 }}>{id}</span>,
+    },
     { title: "User", dataIndex: ["user", "name"] },
     { title: "Email", dataIndex: ["user", "email"] },
-    { title: "Date", dataIndex: ["slot", "date"] },
-    { title: "Time", dataIndex: ["slot", "time"] },
+    {
+      title: "Game",
+      key: "game",
+      render: (_, record) => (
+        <Space>
+          <Avatar
+            shape="square"
+            size={40}
+            src={getGameImageUrl(record.slot?.gameImage)}
+          />
+          {record.slot?.gameTitle || "-"}
+        </Space>
+      ),
+    },
+    { title: "Play Date", dataIndex: ["slot", "date"] },
+    { title: "Play Time", dataIndex: ["slot", "time"] },
+    {
+      title: "Price",
+      dataIndex: ["slot", "price"],
+      render: (price) => formatPrice(price),
+    },
     {
       title: "Notes",
       dataIndex: "notes",
-      render: (text) => (text ? <span>{text}</span> : <span style={{ color: "#999", fontStyle: "italic" }}>No notes</span>),
+      render: (text) =>
+        text ? (
+          <span>{text}</span>
+        ) : (
+          <span className="text-muted" style={{ fontStyle: "italic" }}>No notes</span>
+        ),
     },
     {
       title: "Status",
       dataIndex: "status",
       render: (status) => (
-        <Tag color={statusColors[status] || "gray"} style={{ fontWeight: 500 }}>
+        <Tag color={statusColors[status] || "gray"}>
           {status ? status.charAt(0).toUpperCase() + status.slice(1) : "Unknown"}
         </Tag>
       ),
     },
     {
+      title: "Created",
+      dataIndex: "createdAt",
+      render: (d) => (d ? new Date(d).toLocaleString() : "-"),
+    },
+    {
       title: "Actions",
       render: (_, record) => {
-        const disabled = record.status === "confirmed" || record.status === "cancelled";
+        const isCancelled = record.status === "cancelled";
+        const isConfirmed = record.status === "confirmed";
         return (
           <Space>
-            <Button type="primary" loading={loadingRows[record._id]} onClick={() => updateBookingStatus(record._id, "confirmed")} disabled={disabled}>
+            <Button
+              type="primary"
+              loading={loadingRows[record._id]}
+              onClick={() => updateBookingStatus(record._id, "confirmed")}
+              disabled={isCancelled || isConfirmed}
+            >
               Confirm
             </Button>
-            <Button danger loading={loadingRows[record._id]} onClick={() => updateBookingStatus(record._id, "cancelled")} disabled={disabled}>
+            <Button
+              danger
+              loading={loadingRows[record._id]}
+              onClick={() => openCancelModal(record)}
+              disabled={isCancelled}
+            >
               Cancel
             </Button>
           </Space>
@@ -140,38 +215,43 @@ export default function AdminBookingsPage() {
   ];
 
   const statusOptions = ["all", "pending", "confirmed", "cancelled"];
-
-  // ---------------- Navigation ----------------
   const navigate = (path) => startTransition(() => router.push(path));
 
-  // ---------------- Render ----------------
   return (
     <AntdWarningSuppressor>
       <DashboardLayout role="admin">
         {contextHolder}
-        <div className="p-6">
-          {/* Navigation */}
+        <div className="p-6 themed-page">
           <Space className="mb-6" wrap size={[8, 8]}>
             <Button onClick={() => navigate("/admin/users")}>Users</Button>
-            <Button onClick={() => navigate("/admin/slots")}>Slots</Button>
-            <Button type="primary" onClick={() => navigate("/admin/bookings")}>All Bookings</Button>
-            <Button onClick={() => navigate("/admin/confirmed-bookings")}>Confirmed Bookings</Button>
+            <Button onClick={() => navigate("/admin/slots")}>PS5 Slots</Button>
+            <Button type="primary" onClick={() => navigate("/admin/bookings")}>
+              All Bookings
+            </Button>
+            <Button onClick={() => navigate("/admin/confirmed-bookings")}>
+              Confirmed Bookings
+            </Button>
           </Space>
 
-          <h2 className="text-2xl font-semibold mb-4">Bookings</h2>
+          <h2 className="text-2xl font-semibold mb-4">Booking Management</h2>
 
-          {/* Filters */}
           <Space className="mb-4" wrap size={[8, 8]}>
-            <DatePicker value={filterDate} onChange={setFilterDate} placeholder="Filter by date" />
+            <DatePicker
+              value={filterDate}
+              onChange={setFilterDate}
+              placeholder="Filter by play date"
+            />
             <Input
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Search by name or email"
-              style={{ width: 200 }}
+              placeholder="Search user, game, or order ID"
+              style={{ width: 240 }}
             />
             <Select
               value={statusFilter || "all"}
-              onChange={(value) => setStatusFilter(value === "all" ? null : value)}
+              onChange={(value) =>
+                setStatusFilter(value === "all" ? null : value)
+              }
               style={{ width: 150 }}
             >
               {statusOptions.map((s) => (
@@ -185,7 +265,6 @@ export default function AdminBookingsPage() {
             </Button>
           </Space>
 
-          {/* Table */}
           <Table
             rowKey="_id"
             columns={columns}
@@ -196,13 +275,28 @@ export default function AdminBookingsPage() {
               pageSize: limit,
               total,
               onChange: (p) => fetchBookings({ pageNum: p }),
-              showTotal: (total) => `Total ${total} bookings`,
+              showTotal: (t) => `Total ${t} bookings`,
             }}
             bordered
             size="middle"
-            scroll={{ x: 'max-content' }}
+            scroll={{ x: "max-content" }}
           />
         </div>
+
+        <Modal
+          title="Cancel Booking"
+          open={cancelModal.open}
+          onCancel={() => setCancelModal({ open: false, booking: null })}
+          onOk={confirmAdminCancel}
+        >
+          <p>Cancel this booking and release the slot?</p>
+          <Input.TextArea
+            rows={2}
+            placeholder="Reason for cancellation (optional)"
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+          />
+        </Modal>
       </DashboardLayout>
     </AntdWarningSuppressor>
   );

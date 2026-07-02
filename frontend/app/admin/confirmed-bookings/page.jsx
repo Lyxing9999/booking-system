@@ -90,9 +90,9 @@ export default function AdminConfirmedBookingsPage() {
       dataIndex: "notes",
       render: (text) =>
         text ? (
-          <span style={{ color: "#333", fontStyle: "normal" }}>{text}</span>
+          <span style={{ fontStyle: "normal" }}>{text}</span>
         ) : (
-          <span style={{ color: "#999", fontStyle: "italic" }}>No notes</span>
+          <span className="text-muted" style={{ fontStyle: "italic" }}>No notes</span>
         ),
     },
   ];
@@ -104,7 +104,7 @@ export default function AdminConfirmedBookingsPage() {
   return (
     <DashboardLayout role="admin">
       {contextHolder}
-      <div className="p-6">
+      <div className="p-6 themed-page">
         {/* Navigation */}
         <Space className="mb-6" wrap size={[8, 8]}>
           <Button onClick={() => navigate("/admin/users")}>Users</Button>

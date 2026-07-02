@@ -1,12 +1,24 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 
+export const THEME_IDS = [
+  "ps5-default",
+  "midnight-lounge",
+  "neon-arena",
+  "clean-light",
+];
+
 const userSchema = new mongoose.Schema({
   name: String,
   email: { type: String, unique: true },
   password: String,
   role: { type: String, enum: ["admin", "user"], default: "user" },
   refreshToken: String,
+  theme: {
+    type: String,
+    enum: THEME_IDS,
+    default: "ps5-default",
+  },
 });
 
 userSchema.pre("save", async function (next) {

@@ -1,21 +1,58 @@
-import dayjs from "dayjs";
-import utc from "dayjs/plugin/utc.js";
-import timezone from "dayjs/plugin/timezone.js";
 import Booking from "../models/Booking.js";
 import Slot from "../models/Slot.js";
 import AppError from "../utils/errors.js";
+import { formatSlotResponse, isSlotExpired } from "../utils/slotHelpers.js";
 
-dayjs.extend(utc);
-dayjs.extend(timezone);
+function requireAdmin(req, next) {
+  if (req.user.role !== "admin") {
+    next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+    return false;
+  }
+  return true;
+}
+
+function buildSlotSearchRegex(search) {
+  const regex = new RegExp(search, "i");
+  return {
+    $or: [
+      { gameTitle: regex },
+      { description: regex },
+      { time: regex },
+      { date: regex },
+    ],
+  };
+}
+
+function parseSlotBody(body, file) {
+  const data = {
+    gameTitle: body.gameTitle?.trim(),
+    description: body.description || "",
+    date: body.date,
+    time: body.time,
+    price: body.price !== undefined ? Number(body.price) : 0,
+    maxPlayers: body.maxPlayers !== undefined ? Number(body.maxPlayers) : 1,
+  };
+
+  if (body.status) data.status = body.status;
+  if (file) data.gameImage = `/uploads/${file.filename}`;
+
+  return data;
+}
+
+async function hasActiveBooking(slotId) {
+  return Booking.exists({
+    slotId,
+    status: { $in: ["pending", "confirmed"] },
+  });
+}
 
 // ============================================================
-// @desc    Get all slots
-// @route   GET /api/slots
-// @access  Public (or Admin Only if protected externally)
+// @desc    Get all slots (legacy)
+// @route   GET /slots
 // ============================================================
 export const getAllSlots = async (req, res, next) => {
   try {
-    const slots = await Slot.find();
+    const slots = await Slot.find().sort({ date: 1, time: 1 });
     res.json(slots);
   } catch (err) {
     next(new AppError("Failed to get slots", 500, "GET_SLOTS_FAILED"));
@@ -23,183 +60,179 @@ export const getAllSlots = async (req, res, next) => {
 };
 
 // ============================================================
-// @desc    Create a new slot
-// @route   POST /api/slots
-// @access  Admin
+// @desc    Create PS5 game slot (Admin)
+// @route   POST /slots/admin
 // ============================================================
 export const createSlot = async (req, res, next) => {
   try {
-    if (req.user.role !== "admin") {
-      return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+    if (!requireAdmin(req, next)) return;
+
+    if (!req.file) {
+      return next(
+        new AppError("Game image is required", 400, "IMAGE_REQUIRED")
+      );
     }
 
-    const slot = new Slot(req.body);
-    await slot.save();
+    const data = parseSlotBody(req.body, req.file);
+    if (!data.gameTitle || !data.date || !data.time) {
+      return next(
+        new AppError(
+          "Game title, date, and time are required",
+          400,
+          "VALIDATION_ERROR"
+        )
+      );
+    }
 
-    res.json(slot);
+    const slot = await Slot.create({
+      ...data,
+      status: "available",
+      createdBy: req.user.id,
+    });
+
+    res.status(201).json({
+      message: "Slot created successfully",
+      slot,
+    });
   } catch (err) {
+    if (err.code === 11000) {
+      return next(
+        new AppError(
+          "A slot with this date and time already exists",
+          400,
+          "DUPLICATE_SLOT"
+        )
+      );
+    }
     next(new AppError("Failed to create slot", 500, "CREATE_SLOT_FAILED"));
   }
 };
 
 // ============================================================
-// @desc    Update an existing slot
-// @route   PUT /api/slots/:id
-// @access  Admin
+// @desc    Update slot (Admin)
+// @route   PATCH /slots/admin/:id
 // ============================================================
 export const updateSlot = async (req, res, next) => {
   try {
-    if (req.user.role !== "admin") {
-      return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+    if (!requireAdmin(req, next)) return;
+
+    const slot = await Slot.findById(req.params.id);
+    if (!slot) {
+      return next(new AppError("Slot not found", 404, "SLOT_NOT_FOUND"));
     }
 
-    const slot = await Slot.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
+    const updates = parseSlotBody(req.body, req.file);
+    const activeBooking = await hasActiveBooking(slot._id);
+
+    if (
+      activeBooking &&
+      ((updates.date && updates.date !== slot.date) ||
+        (updates.time && updates.time !== slot.time))
+    ) {
+      return next(
+        new AppError(
+          "Cannot change date/time while an active booking exists",
+          400,
+          "SLOT_HAS_ACTIVE_BOOKING"
+        )
+      );
+    }
+
+    Object.keys(updates).forEach((key) => {
+      if (updates[key] !== undefined && updates[key] !== null) {
+        slot[key] = updates[key];
+      }
     });
-    res.json(slot);
+
+    await slot.save();
+
+    res.json({
+      message: "Slot updated successfully",
+      slot,
+    });
   } catch (err) {
+    if (err.code === 11000) {
+      return next(
+        new AppError(
+          "A slot with this date and time already exists",
+          400,
+          "DUPLICATE_SLOT"
+        )
+      );
+    }
     next(new AppError("Failed to update slot", 500, "UPDATE_SLOT_FAILED"));
   }
 };
 
 // ============================================================
-// @desc    Delete a slot
-// @route   DELETE /api/slots/:id
-// @access  Admin
+// @desc    Disable slot (Admin soft delete)
+// @route   DELETE /slots/admin/:id
 // ============================================================
 export const deleteSlot = async (req, res, next) => {
   try {
-    if (req.user.role !== "admin") {
-      return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+    if (!requireAdmin(req, next)) return;
+
+    const slot = await Slot.findById(req.params.id);
+    if (!slot) {
+      return next(new AppError("Slot not found", 404, "SLOT_NOT_FOUND"));
     }
 
-    await Slot.findByIdAndDelete(req.params.id);
-    res.json({ message: "Slot deleted" });
+    const activeBooking = await hasActiveBooking(slot._id);
+    if (activeBooking) {
+      return next(
+        new AppError(
+          "Cannot disable slot with an active booking",
+          400,
+          "SLOT_HAS_ACTIVE_BOOKING"
+        )
+      );
+    }
+
+    slot.status = "disabled";
+    await slot.save();
+
+    res.json({ message: "Slot disabled successfully", slot });
   } catch (err) {
-    next(new AppError("Failed to delete slot", 500, "DELETE_SLOT_FAILED"));
+    next(new AppError("Failed to disable slot", 500, "DELETE_SLOT_FAILED"));
   }
 };
 
 // ============================================================
-// @desc    Get slots with booking info (Admin dashboard view)
-// @route   GET /api/admin/slots
-// @access  Admin
+// @desc    Get all slots (Admin)
+// @route   GET /slots/admin
 // ============================================================
 export const getSlotsForAdminUX = async (req, res, next) => {
   try {
-    if (req.user.role !== "admin") {
-      return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
-    }
+    if (!requireAdmin(req, next)) return;
 
     const { date, page = 1, limit = 20, search, status } = req.query;
-    const skip = (page - 1) * limit;
-    const pipeline = [];
+    const skip = (Number(page) - 1) * Number(limit);
 
-    // Match stage
-    const matchStage = {};
-    if (date) matchStage.date = date;
-    if (search) {
-      const regex = new RegExp(search, "i");
-      matchStage.$or = [{ time: regex }];
-    }
-    if (Object.keys(matchStage).length > 0) {
-      pipeline.push({ $match: matchStage });
-    }
+    const query = {};
+    if (date) query.date = date;
+    if (status) query.status = status;
+    if (search) Object.assign(query, buildSlotSearchRegex(search));
 
-    // Lookup bookings
-    pipeline.push({
-      $lookup: {
-        from: "bookings",
-        localField: "_id",
-        foreignField: "slotId",
-        as: "bookings",
-      },
-    });
+    const [slots, total] = await Promise.all([
+      Slot.find(query)
+        .sort({ createdAt: -1, date: 1, time: 1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
+      Slot.countDocuments(query),
+    ]);
 
-    const nowInCambodia = dayjs().tz("Asia/Phnom_Penh").toDate();
-
-    // Add booked, expired, status
-    pipeline.push({
-      $addFields: {
-        booked: {
-          $anyElementTrue: {
-            $map: {
-              input: "$bookings",
-              as: "b",
-              in: { $eq: ["$$b.status", "confirmed"] },
-            },
-          },
-        },
-        expired: {
-          $lt: [
-            {
-              $dateFromString: {
-                dateString: { $concat: ["$date", "T", "$time", ":00"] },
-                timezone: "Asia/Phnom_Penh",
-              },
-            },
-            nowInCambodia,
-          ],
-        },
-      },
-    });
-
-    pipeline.push({
-      $addFields: {
-        status: {
-          $cond: [
-            "$expired",
-            "expired",
-            { $cond: ["$booked", "booked", "available"] },
-          ],
-        },
-      },
-    });
-
-    if (status) pipeline.push({ $match: { status } });
-
-    pipeline.push({
-      $project: {
-        _id: 1,
-        date: 1,
-        time: 1,
-        bookings: 1,
-        status: 1,
-      },
-    });
-
-    pipeline.push({
-      $addFields: {
-        statusPriority: {
-          $switch: {
-            branches: [
-              { case: { $eq: ["$status", "available"] }, then: 1 },
-              { case: { $eq: ["$status", "booked"] }, then: 2 },
-              { case: { $eq: ["$status", "expired"] }, then: 3 },
-            ],
-            default: 99,
-          },
-        },
-      },
-    });
-
-    pipeline.push({ $sort: { statusPriority: 1, date: 1, time: 1 } });
-
-    const countPipeline = [...pipeline, { $count: "total" }];
-    const countResult = await Slot.aggregate(countPipeline);
-    const total = countResult[0]?.total || 0;
-
-    pipeline.push({ $skip: Number(skip) });
-    pipeline.push({ $limit: Number(limit) });
-
-    const slots = await Slot.aggregate(pipeline);
+    const enriched = slots.map((slot) => ({
+      ...slot,
+      expired: isSlotExpired(slot),
+    }));
 
     res.json({
       success: true,
       total,
       page: Number(page),
       limit: Number(limit),
-      slots,
+      slots: enriched,
     });
   } catch (err) {
     next(new AppError("Failed to get slots", 500, "GET_ADMIN_SLOTS_FAILED"));
@@ -207,52 +240,43 @@ export const getSlotsForAdminUX = async (req, res, next) => {
 };
 
 // ============================================================
-// @desc    Get only available slots for user (no booked or expired)
-// @route   GET /api/user/slots/available
-// @access  User
+// @desc    Get available PS5 slots for user
+// @route   GET /slots/user/available
 // ============================================================
 export const getAvailableSlotsForUser = async (req, res, next) => {
   try {
-    const userId = req.user.id; // Only store userId in Booking
-    const nowInCambodia = dayjs().tz("Asia/Phnom_Penh");
-    const { date } = req.query;
+    const userId = req.user.id;
+    const { date, search, page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
 
-    const query = {};
+    const query = { status: "available" };
     if (date) query.date = date;
+    if (search) Object.assign(query, buildSlotSearchRegex(search));
 
-    const slots = await Slot.find(query).lean();
-    const slotIds = slots.map((s) => s._id);
+    const slots = await Slot.find(query).sort({ date: 1, time: 1 }).lean();
 
-    // Only check bookings by userId
-    const bookings = await Booking.find({ slotId: { $in: slotIds } }).lean();
+    const userBookings = await Booking.find({
+      userId,
+      status: { $in: ["pending", "confirmed"] },
+    })
+      .select("slotId")
+      .lean();
+    const bookedByUser = new Set(userBookings.map((b) => b.slotId.toString()));
 
     const availableSlots = slots
-      .filter((slot) => {
-        const slotBookings = bookings.filter(
-          (b) => b.slotId.toString() === slot._id.toString()
-        );
+      .filter((slot) => !bookedByUser.has(slot._id.toString()))
+      .filter((slot) => !isSlotExpired(slot))
+      .map((slot) => ({ ...slot, status: "available" }));
 
-        // Exclude if current user already booked
-        if (slotBookings.some((b) => b.userId.toString() === userId))
-          return false;
-
-        // Exclude if any confirmed booking exists
-        if (slotBookings.some((b) => b.status === "confirmed")) return false;
-
-        // Exclude if slot is expired
-        const slotDateTime = dayjs(`${slot.date}T${slot.time}:00`).tz(
-          "Asia/Phnom_Penh"
-        );
-        if (slotDateTime.isBefore(nowInCambodia)) return false;
-
-        return true;
-      })
-      .map((s) => ({ ...s, status: "available", canBook: true }));
+    const total = availableSlots.length;
+    const paged = availableSlots.slice(skip, skip + Number(limit));
 
     res.json({
       success: true,
-      total: availableSlots.length,
-      slots: availableSlots,
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      slots: paged,
     });
   } catch (err) {
     next(err);
@@ -260,69 +284,55 @@ export const getAvailableSlotsForUser = async (req, res, next) => {
 };
 
 // ============================================================
-// @desc    Get available & booked slots for user (hide own bookings)
-// @route   GET /api/user/slots
-// @access  User
+// @desc    Get available slots for user UX (legacy listing)
+// @route   GET /slots/user
 // ============================================================
 export const getAvailableAndBookedSlotsForUser = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const nowInCambodia = dayjs().tz("Asia/Phnom_Penh");
-    const { date, search, status } = req.query;
+    const { date, search, status, page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
 
-    const query = {};
+    const query = { status: { $ne: "disabled" } };
     if (date) query.date = date;
-    if (search) query.time = { $regex: search, $options: "i" };
+    if (search) Object.assign(query, buildSlotSearchRegex(search));
 
-    const slots = await Slot.find(query).lean();
-    const slotIds = slots.map((s) => s._id);
+    const slots = await Slot.find(query).sort({ date: 1, time: 1 }).lean();
 
-    const bookings = await Booking.find({ slotId: { $in: slotIds } }).lean();
+    const userBookings = await Booking.find({
+      userId,
+      status: { $in: ["pending", "confirmed"] },
+    })
+      .select("slotId")
+      .lean();
+    const bookedByUser = new Set(userBookings.map((b) => b.slotId.toString()));
 
-    const filteredSlots = slots
-      .map((slot) => {
-        const slotBookings = bookings.filter(
-          (b) => b.slotId.toString() === slot._id.toString()
-        );
-
-        // Skip slot if user already booked it
-        if (slotBookings.some((b) => b.userId.toString() === userId))
-          return null;
-
-        // Mark as booked if any other confirmed booking exists
-        const othersConfirmed = slotBookings.some(
-          (b) => b.userId.toString() !== userId && b.status === "confirmed"
-        );
-
-        const slotDateTime = dayjs(`${slot.date}T${slot.time}:00`).tz(
-          "Asia/Phnom_Penh"
-        );
-        if (slotDateTime.isBefore(nowInCambodia)) return null;
-
-        return {
-          ...slot,
-          status: othersConfirmed ? "booked" : "available",
-          canBook: !othersConfirmed,
-        };
-      })
-      .filter(Boolean);
+    const mapped = slots
+      .filter((slot) => !bookedByUser.has(slot._id.toString()))
+      .filter((slot) => !isSlotExpired(slot))
+      .map((slot) => ({
+        ...slot,
+        status: slot.status === "available" ? "available" : "booked",
+        canBook: slot.status === "available",
+      }));
 
     const result = status
-      ? filteredSlots.filter((slot) => slot.status === status)
-      : filteredSlots;
+      ? mapped.filter((slot) => slot.status === status)
+      : mapped;
 
-    result.sort((a, b) => {
-      if (a.status !== b.status) return a.status === "available" ? -1 : 1;
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return a.time.localeCompare(b.time);
-    });
+    const total = result.length;
+    const paged = result.slice(skip, skip + Number(limit));
 
     res.json({
       success: true,
-      total: result.length,
-      slots: result,
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      slots: paged,
     });
   } catch (err) {
     next(err);
   }
 };
+
+export { formatSlotResponse };

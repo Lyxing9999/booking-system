@@ -3,43 +3,42 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import api from "../../lib/api";
-import { Form, Input, Button, message, Card } from "antd";
+import { Form, Input, Button, message, Card, Typography } from "antd";
 import Cookies from "js-cookie";
+import { useTheme } from "../../components/ThemeProvider";
+
 export default function LoginPage() {
   const router = useRouter();
+  const { setTheme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
   const [isPending, startTransition] = useTransition();
 
   const navigate = (path) => {
-    startTransition(() => {
-      router.push(path);
-    });
+    startTransition(() => router.push(path));
   };
+
   const handleSubmit = async (values) => {
     setLoading(true);
     try {
       const res = await api.post("/auth/login", values);
-      const { token, user } = res.data.data;
+      const { user } = res.data.data;
 
-      // save token (frontend only)
-      document.cookie = `token=${token}; path=/; max-age=${
-        60 * 60 * 24
-      }; SameSite=Lax`;
+      document.cookie = `token=${res.data.data.token || "session"}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
 
-      // save role
       Cookies.set("role", user.role, {
         expires: 1,
         path: "/",
-        sameSite: "Lax", // secure ONLY if https
+        sameSite: "Lax",
       });
 
-      messageApi.success(res.data.message || "Login successful!");
+      if (user.theme) {
+        setTheme(user.theme, true);
+      }
 
-      // redirect based on role
+      messageApi.success("Login successful!");
       router.push(user.role === "admin" ? "/admin/slots" : "/user/slots");
     } catch (err) {
-      // clear token
       document.cookie =
         "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
       messageApi.error(
@@ -49,11 +48,28 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50">
+    <div
+      className="flex min-h-screen items-center justify-center p-4"
+      style={{ background: "var(--theme-bg)" }}
+    >
       {contextHolder}
-      <Card className="w-full max-w-md p-8 rounded-lg shadow-lg">
-        <h1 className="text-2xl font-bold mb-6 text-center">Login</h1>
+      <Card
+        className="w-full max-w-md rounded-xl shadow-lg"
+        style={{
+          background: "var(--theme-card)",
+          borderColor: "var(--theme-border)",
+        }}
+      >
+        <div className="text-center mb-2">
+          <Typography.Title level={2} style={{ margin: 0, color: "var(--theme-text)" }}>
+            PS5 Booking
+          </Typography.Title>
+          <Typography.Text style={{ color: "var(--theme-text-muted)" }}>
+            Sign in to book your play session
+          </Typography.Text>
+        </div>
 
         <Form
           name="loginForm"
@@ -61,6 +77,7 @@ export default function LoginPage() {
           onFinish={handleSubmit}
           requiredMark={false}
           initialValues={{ email: "", password: "" }}
+          className="mt-6"
         >
           <Form.Item
             label="Email"
@@ -93,15 +110,26 @@ export default function LoginPage() {
           </Form.Item>
 
           <Form.Item>
-            <Button
-              type="default"
-              block
-              onClick={() => navigate("/auth/register")}
-            >
+            <Button type="default" block onClick={() => navigate("/auth/register")}>
               Register
             </Button>
           </Form.Item>
         </Form>
+
+        <div
+          className="mt-4 p-3 rounded-lg text-xs"
+          style={{
+            background: "var(--theme-surface)",
+            border: "1px solid var(--theme-border)",
+            color: "var(--theme-text-muted)",
+          }}
+        >
+          <strong style={{ color: "var(--theme-text)" }}>Demo accounts</strong>
+          <br />
+          Admin: admin@ps5booking.com / Admin@123
+          <br />
+          User: user@ps5booking.com / User@123
+        </div>
       </Card>
     </div>
   );

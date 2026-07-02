@@ -159,7 +159,7 @@ export default function AdminUsersPage() {
   return (
     <DashboardLayout role="admin">
       {contextHolder}
-      <div className="p-6">
+      <div className="p-6 themed-page">
         {/* Navigation */}
         <Space className="mb-6" wrap size={[8, 8]}>
           <Button type="primary" onClick={() => navigate("/admin/users")}>Users</Button>

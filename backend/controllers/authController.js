@@ -42,7 +42,7 @@ export const registerUser = async (req, res, next) => {
     const accessToken = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+      { expiresIn: "15m" },
     );
 
     res.status(201).json({
@@ -55,6 +55,7 @@ export const registerUser = async (req, res, next) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          theme: user.theme || "ps5-default",
         },
       },
     });
@@ -71,19 +72,19 @@ export const loginUser = async (req, res) => {
 
   const user = await User.findOne({ email });
   if (!user || !(await user.comparePassword(password))) {
-    return res.status(400).json({ message: "Invalid credentials" });
+    return res.status(400).json({ message: "Invalid email or password" });
   }
 
   const accessToken = jwt.sign(
     { id: user._id, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: "15m" }
+    { expiresIn: "15m" },
   );
 
   const refreshToken = jwt.sign(
     { id: user._id, role: user.role },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: "7d" },
   );
 
   // Save refresh token in DB
@@ -97,7 +98,14 @@ export const loginUser = async (req, res) => {
   res.json({
     status: "success",
     data: {
-      user: { id: user._id, role: user.role, email: user.email },
+      token: accessToken,
+      user: {
+        id: user._id,
+        role: user.role,
+        email: user.email,
+        name: user.name,
+        theme: user.theme || "ps5-default",
+      },
     },
   });
 };
@@ -134,13 +142,13 @@ export const refreshToken = async (req, res, next) => {
     const newAccessToken = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+      { expiresIn: "15m" },
     );
 
     const newRefreshToken = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_REFRESH_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "7d" },
     );
     user.refreshToken = newRefreshToken;
     await user.save();
@@ -154,7 +162,7 @@ export const refreshToken = async (req, res, next) => {
     });
   } catch (err) {
     next(
-      new AppError("Invalid or expired refresh token", 403, "TOKEN_INVALID")
+      new AppError("Invalid or expired refresh token", 403, "TOKEN_INVALID"),
     );
   }
 };

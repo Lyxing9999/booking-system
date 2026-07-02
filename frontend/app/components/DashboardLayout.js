@@ -11,15 +11,26 @@ import {
   Button,
   Space,
   Input,
+  Typography,
 } from "antd";
-import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
+import {
+  UserOutlined,
+  LogoutOutlined,
+  BgColorsOutlined,
+  CheckOutlined,
+} from "@ant-design/icons";
 import api from "../lib/api";
+import { useTheme } from "./ThemeProvider";
+import { THEMES } from "../lib/themes";
 
 export default function DashboardLayout({ children, role = "user" }) {
   const router = useRouter();
+  const { themeId, saveTheme } = useTheme();
   const [messageApi, contextHolder] = message.useMessage();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("profile"); // "profile" or "password"
+  const [activeTab, setActiveTab] = useState("profile");
+  const [savingTheme, setSavingTheme] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState(themeId);
 
   const [profileForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
@@ -31,17 +42,19 @@ export default function DashboardLayout({ children, role = "user" }) {
 
   const handleLogout = async () => {
     try {
-      await api.post("/auth/logout"); // backend clears cookies
+      await api.post("/auth/logout");
       localStorage.removeItem("token");
       localStorage.removeItem("userId");
-
       message.success("Logged out successfully");
       router.push("/auth/login");
     } catch (err) {
-      console.error("Logout failed:", err);
       message.error(err?.response?.data?.message || "Logout failed");
     }
   };
+
+  useEffect(() => {
+    setSelectedTheme(themeId);
+  }, [themeId]);
 
   useEffect(() => {
     if (isProfileModalOpen) {
@@ -52,7 +65,8 @@ export default function DashboardLayout({ children, role = "user" }) {
             name: res.data.name,
             email: res.data.email,
           });
-        } catch (err) {
+          if (res.data.theme) setSelectedTheme(res.data.theme);
+        } catch {
           notify.error("Failed to load profile");
         }
       })();
@@ -89,10 +103,22 @@ export default function DashboardLayout({ children, role = "user" }) {
     }
   };
 
+  const handleThemeSave = async () => {
+    setSavingTheme(true);
+    try {
+      await saveTheme(selectedTheme);
+      notify.success("Appearance saved — your PS5 lounge is ready!");
+    } catch {
+      notify.error("Failed to save theme");
+    } finally {
+      setSavingTheme(false);
+    }
+  };
+
   const menuItems = [
     {
       key: "profile",
-      label: "Profile",
+      label: "Profile & Appearance",
       icon: <UserOutlined />,
       onClick: () => setIsProfileModalOpen(true),
     },
@@ -104,60 +130,69 @@ export default function DashboardLayout({ children, role = "user" }) {
     },
   ];
 
-  // Dynamically set dashboard title
   const dashboardTitle =
-    role.toLowerCase() === "admin" ? "Admin Dashboard" : "User Dashboard";
+    role.toLowerCase() === "admin"
+      ? "PS5 Admin Dashboard"
+      : "PS5 Booking Dashboard";
+
+  const tabs = [
+    { key: "profile", label: "Edit Profile" },
+    { key: "password", label: "Change Password" },
+    { key: "appearance", label: "Appearance", icon: <BgColorsOutlined /> },
+  ];
 
   return (
     <>
       {contextHolder}
-      <div className="min-h-screen flex flex-col">
-        {/* Header */}
-        <header className="flex items-center justify-between p-4 bg-gray-100 border-b shadow-sm">
-          <h1 className="text-xl font-bold text-gray-800">{dashboardTitle}</h1>
+      <div className="themed-layout min-h-screen flex flex-col">
+        <header className="themed-header flex items-center justify-between p-4 shadow-sm">
+          <div>
+            <h1 className="text-xl font-bold">{dashboardTitle}</h1>
+            <p className="text-sm m-0" style={{ color: "var(--theme-text-muted)" }}>
+              Book your next PS5 play session
+            </p>
+          </div>
           <Dropdown menu={{ items: menuItems }} placement="bottomRight">
             <Avatar
-              style={{ cursor: "pointer", backgroundColor: "#1890ff" }}
+              style={{
+                cursor: "pointer",
+                backgroundColor: "var(--theme-accent)",
+              }}
               icon={<UserOutlined />}
             />
           </Dropdown>
         </header>
 
-        {/* Main Content */}
-        <main className="flex-1 p-6 bg-white">{children}</main>
+        <main className="themed-main flex-1 p-6">{children}</main>
       </div>
 
-      {/* Profile / Password Modal */}
       <Modal
-        title="Edit Profile"
+        title="Profile & Settings"
         open={isProfileModalOpen}
         onCancel={() => setIsProfileModalOpen(false)}
         footer={null}
         destroyOnHidden
+        width={520}
       >
-        {/* Tabs */}
-        <Space style={{ marginBottom: 16 }}>
-          <Button
-            type={activeTab === "profile" ? "primary" : "default"}
-            onClick={() => setActiveTab("profile")}
-          >
-            Edit Profile
-          </Button>
-          <Button
-            type={activeTab === "password" ? "primary" : "default"}
-            onClick={() => setActiveTab("password")}
-          >
-            Change Password
-          </Button>
+        <Space wrap style={{ marginBottom: 16 }}>
+          {tabs.map((tab) => (
+            <Button
+              key={tab.key}
+              type={activeTab === tab.key ? "primary" : "default"}
+              icon={tab.icon}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </Button>
+          ))}
         </Space>
 
-        {/* Edit Profile */}
         {activeTab === "profile" && (
           <Form
             form={profileForm}
             layout="vertical"
             onFinish={handleProfileUpdate}
-            preserve={true}
+            preserve
           >
             <Form.Item label="Name" name="name">
               <Input placeholder="Your name" />
@@ -176,13 +211,12 @@ export default function DashboardLayout({ children, role = "user" }) {
           </Form>
         )}
 
-        {/* Change Password */}
         {activeTab === "password" && (
           <Form
             form={passwordForm}
             layout="vertical"
             onFinish={handlePasswordUpdate}
-            preserve={true}
+            preserve
           >
             <Form.Item label="Current Password" name="currentPassword">
               <Input.Password placeholder="Current password" />
@@ -196,6 +230,59 @@ export default function DashboardLayout({ children, role = "user" }) {
               </Button>
             </Form.Item>
           </Form>
+        )}
+
+        {activeTab === "appearance" && (
+          <div>
+            <Typography.Paragraph type="secondary">
+              Pick a look for your PS5 booking experience. Your choice is saved
+              to your account and applies across all pages.
+            </Typography.Paragraph>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              {Object.values(THEMES).map((theme) => (
+                <div
+                  key={theme.id}
+                  className={`theme-option ${selectedTheme === theme.id ? "selected" : ""}`}
+                  onClick={() => setSelectedTheme(theme.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && setSelectedTheme(theme.id)
+                  }
+                >
+                  <div className="theme-preview-strip">
+                    {theme.preview.map((color) => (
+                      <span key={color} style={{ background: color }} />
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold text-sm">{theme.name}</div>
+                      <div
+                        className="text-xs mt-1"
+                        style={{ color: "var(--theme-text-muted)" }}
+                      >
+                        {theme.description}
+                      </div>
+                    </div>
+                    {selectedTheme === theme.id && (
+                      <CheckOutlined style={{ color: "var(--theme-accent)" }} />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Button
+              type="primary"
+              block
+              loading={savingTheme}
+              onClick={handleThemeSave}
+            >
+              Save Appearance
+            </Button>
+          </div>
         )}
       </Modal>
     </>

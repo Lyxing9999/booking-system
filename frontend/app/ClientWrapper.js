@@ -1,7 +1,9 @@
 "use client";
-import { useEffect } from "react";
 
-export default function AntdWarningSuppressor({ children }) {
+import { useEffect } from "react";
+import { ThemeProvider } from "./components/ThemeProvider";
+
+export default function ClientWrapper({ children }) {
   useEffect(() => {
     if (typeof console !== "undefined") {
       const originalWarn = console.warn;
@@ -18,5 +20,5 @@ export default function AntdWarningSuppressor({ children }) {
     }
   }, []);
 
-  return children;
+  return <ThemeProvider>{children}</ThemeProvider>;
 }

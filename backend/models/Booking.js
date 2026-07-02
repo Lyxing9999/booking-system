@@ -22,12 +22,31 @@ const BookingSchema = new mongoose.Schema(
       enum: ["pending", "confirmed", "cancelled"],
       default: "pending",
     },
-    notes: { type: String, default: "" },
+    notes: {
+      type: String,
+      default: "",
+    },
+    cancelledBy: {
+      type: String,
+      enum: ["user", "admin", null],
+      default: null,
+    },
+    cancelledReason: {
+      type: String,
+      default: "",
+    },
+    confirmedAt: {
+      type: Date,
+      default: null,
+    },
+    cancelledAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
-// Optional: enforce uniqueness of a user booking per slot
 BookingSchema.index({ slotId: 1, userId: 1 }, { unique: true });
 
 export default mongoose.models.Booking ||

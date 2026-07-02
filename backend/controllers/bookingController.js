@@ -4,13 +4,9 @@ import User from "../models/User.js";
 import AppError from "../utils/errors.js";
 import { sendBookingEmail } from "../utils/mailer.js";
 import { paginatePipeline } from "../utils/mongoHelpers.js";
-/* ========================= USER BOOKINGS ========================= */
+import { generateOrderId } from "../utils/orderId.js";
 
-// ============================================================
-// @desc    Create booking
-// @route   POST /api/bookings
-// @access  User
-// ============================================================
+/* ========================= USER BOOKINGS ========================= */
 
 export const createBooking = async (req, res, next) => {
   try {
@@ -18,45 +14,63 @@ export const createBooking = async (req, res, next) => {
     const userId = req.user.id;
 
     const slot = await Slot.findById(slotId);
-    if (!slot)
+    if (!slot) {
       return next(new AppError("Slot not found", 404, "SLOT_NOT_FOUND"));
+    }
+    if (slot.status === "disabled") {
+      return next(new AppError("Slot is disabled", 400, "SLOT_DISABLED"));
+    }
+    if (slot.status !== "available") {
+      return next(new AppError("Slot is not available", 400, "SLOT_NOT_AVAILABLE"));
+    }
 
-    const existingBooking = await Booking.findOne({ userId, slotId });
-    if (existingBooking)
-      return next(new AppError("Duplicate booking", 400, "DUPLICATE_BOOKING"));
-
-    const approvedBooking = await Booking.findOne({
+    const existingBooking = await Booking.findOne({
+      userId,
       slotId,
-      status: "approved",
+      status: { $ne: "cancelled" },
     });
-    if (approvedBooking)
+    if (existingBooking) {
+      return next(new AppError("Duplicate booking", 400, "DUPLICATE_BOOKING"));
+    }
+
+    const activeOnSlot = await Booking.findOne({
+      slotId,
+      status: { $in: ["pending", "confirmed"] },
+    });
+    if (activeOnSlot) {
       return next(
-        new AppError("Slot already approved", 400, "SLOT_ALREADY_APPROVED")
+        new AppError("Slot already has an active booking", 400, "SLOT_ALREADY_BOOKED")
       );
+    }
+
+    const orderId = await generateOrderId(Booking);
 
     const booking = await Booking.create({
       slotId,
       userId,
-      orderId: "ORD-" + Date.now(),
-      notes,
+      orderId,
+      notes: notes || "",
       status: "pending",
     });
 
-    res
-      .status(201)
-      .json({ success: true, message: "Booking created", booking });
+    slot.status = "booked";
+    await slot.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Booking created successfully",
+      booking: {
+        _id: booking._id,
+        orderId: booking.orderId,
+        status: booking.status,
+      },
+    });
   } catch (err) {
     next(
       new AppError("Failed to create booking", 500, "CREATE_BOOKING_FAILED")
     );
   }
 };
-
-// ============================================================
-// @desc    Update booking
-// @route   PATCH /api/bookings/:id
-// @access  User
-// ============================================================
 
 export const updateBooking = async (req, res, next) => {
   try {
@@ -65,49 +79,63 @@ export const updateBooking = async (req, res, next) => {
     const userId = req.user.id;
 
     const booking = await Booking.findById(bookingId);
-    if (!booking)
+    if (!booking) {
       return next(new AppError("Booking not found", 404, "BOOKING_NOT_FOUND"));
-    if (booking.userId.toString() !== userId)
+    }
+    if (booking.userId.toString() !== userId) {
       return next(new AppError("Forbidden", 403, "FORBIDDEN"));
-    if (booking.status === "confirmed")
+    }
+    if (booking.status !== "pending") {
       return next(
         new AppError(
-          "Cannot update confirmed booking",
+          "Only pending bookings can be edited",
           400,
-          "BOOKING_CONFIRMED"
+          "BOOKING_NOT_PENDING"
         )
       );
+    }
 
-    if (slotId && slotId !== booking.slotId.toString()) {
-      const slot = await Slot.findById(slotId);
-      if (!slot)
+    const oldSlotId = booking.slotId.toString();
+
+    if (slotId && slotId !== oldSlotId) {
+      const newSlot = await Slot.findById(slotId);
+      if (!newSlot) {
         return next(new AppError("Slot not found", 404, "SLOT_NOT_FOUND"));
-
-      const duplicate = await Booking.findOne({ userId, slotId });
-      if (duplicate)
+      }
+      if (newSlot.status !== "available") {
         return next(
-          new AppError("Duplicate booking", 400, "DUPLICATE_BOOKING")
+          new AppError("New slot is not available", 400, "SLOT_NOT_AVAILABLE")
         );
+      }
 
+      const duplicate = await Booking.findOne({
+        userId,
+        slotId,
+        status: { $ne: "cancelled" },
+        _id: { $ne: booking._id },
+      });
+      if (duplicate) {
+        return next(new AppError("Duplicate booking", 400, "DUPLICATE_BOOKING"));
+      }
+
+      await Slot.findByIdAndUpdate(oldSlotId, { status: "available" });
+      newSlot.status = "booked";
+      await newSlot.save();
       booking.slotId = slotId;
     }
 
-    booking.notes = notes ?? booking.notes;
+    if (notes !== undefined) booking.notes = notes;
     await booking.save();
 
-    res.json({ success: true, message: "Booking updated", booking });
+    const populated = await Booking.findById(booking._id).populate("slotId");
+
+    res.json({ success: true, message: "Booking updated", booking: populated });
   } catch (err) {
     next(
       new AppError("Failed to update booking", 500, "UPDATE_BOOKING_FAILED")
     );
   }
 };
-
-// ============================================================
-// @desc     user bookings
-// @route   GET /api/bookings/user
-// @access  User
-// ============================================================
 
 export const getUserBookings = async (req, res, next) => {
   try {
@@ -121,27 +149,39 @@ export const getUserBookings = async (req, res, next) => {
         path: "slotId",
         match: {
           ...(date ? { date } : {}),
-          ...(search ? { time: { $regex: search, $options: "i" } } : {}),
+          ...(search
+            ? {
+                $or: [
+                  { gameTitle: { $regex: search, $options: "i" } },
+                  { time: { $regex: search, $options: "i" } },
+                  { description: { $regex: search, $options: "i" } },
+                ],
+              }
+            : {}),
         },
       })
+      .sort({ createdAt: -1 })
       .lean();
-    const filtered = bookings.filter((b) => b.slotId);
 
-    let simplified = filtered.map((b) => ({
-      _id: b._id,
-      orderId: b.orderId,
-      date: b.slotId.date,
-      time: b.slotId.time,
-      status: b.status,
-      hasBook: b.status === "confirmed",
-      cancelled: b.status === "cancelled",
-      notes: b.notes || "",
-    }));
+    let filtered = bookings.filter((b) => b.slotId);
 
-    if (status) simplified = simplified.filter((b) => b.status === status);
+    if (status) filtered = filtered.filter((b) => b.status === status);
 
     const order = { pending: 1, confirmed: 2, cancelled: 3 };
-    simplified.sort((a, b) => order[a.status] - order[b.status]);
+    filtered.sort((a, b) => order[a.status] - order[b.status]);
+
+    const simplified = filtered.map((b) => ({
+      _id: b._id,
+      orderId: b.orderId,
+      status: b.status,
+      notes: b.notes || "",
+      date: b.slotId.date,
+      time: b.slotId.time,
+      gameTitle: b.slotId.gameTitle,
+      gameImage: b.slotId.gameImage,
+      price: b.slotId.price,
+      slotId: b.slotId,
+    }));
 
     const start = (page - 1) * limit;
     const paged = simplified.slice(start, start + Number(limit));
@@ -158,63 +198,92 @@ export const getUserBookings = async (req, res, next) => {
   }
 };
 
-// ============================================================
-// @desc     delete booking
-// @route   DELETE /api/bookings/:id
-// @access  User
-// ============================================================
 export const deleteBooking = async (req, res, next) => {
   try {
     const bookingId = req.params.id;
     const userId = req.user.id;
 
     const booking = await Booking.findById(bookingId);
-    if (!booking)
+    if (!booking) {
       return next(new AppError("Booking not found", 404, "BOOKING_NOT_FOUND"));
-    if (booking.userId.toString() !== userId)
+    }
+    if (booking.userId.toString() !== userId) {
       return next(new AppError("Forbidden", 403, "FORBIDDEN"));
-    if (booking.status === "confirmed")
+    }
+    if (booking.status !== "pending") {
       return next(
         new AppError(
-          "Cannot delete confirmed booking",
+          "Only pending bookings can be cancelled",
           400,
-          "BOOKING_CONFIRMED"
+          "BOOKING_NOT_PENDING"
         )
       );
+    }
 
-    await Booking.findByIdAndDelete(bookingId);
-    res.json({ success: true, message: "Booking deleted successfully" });
+    booking.status = "cancelled";
+    booking.cancelledBy = "user";
+    booking.cancelledAt = new Date();
+    await booking.save();
+
+    await Slot.findByIdAndUpdate(booking.slotId, { status: "available" });
+
+    res.json({ success: true, message: "Booking cancelled successfully" });
   } catch (err) {
     next(
-      new AppError("Failed to delete booking", 500, "DELETE_BOOKING_FAILED")
+      new AppError("Failed to cancel booking", 500, "DELETE_BOOKING_FAILED")
     );
   }
 };
 
 /* ========================= ADMIN BOOKINGS ========================= */
-// ============================================================
-// @desc    Update booking status (Admin)
-// @route   PATCH /api/admin/bookings/:id/status
-// @access  Admin
-// ============================================================
+
 export const updateBookingStatus = async (req, res, next) => {
   try {
-    if (req.user.role !== "admin")
+    if (req.user.role !== "admin") {
       return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+    }
 
-    const { status } = req.body;
+    const { status, cancelledReason } = req.body;
     const bookingId = req.params.id;
 
+    if (!["confirmed", "cancelled"].includes(status)) {
+      return next(new AppError("Invalid status", 400, "INVALID_STATUS"));
+    }
+
     const booking = await Booking.findById(bookingId);
-    if (!booking)
+    if (!booking) {
       return next(new AppError("Booking not found", 404, "BOOKING_NOT_FOUND"));
+    }
+    if (booking.status === "cancelled") {
+      return next(
+        new AppError("Cannot update a cancelled booking", 400, "BOOKING_CANCELLED")
+      );
+    }
 
     const slot = await Slot.findById(booking.slotId);
-    if (!slot)
+    if (!slot) {
       return next(new AppError("Slot not found", 404, "SLOT_NOT_FOUND"));
+    }
 
-    booking.status = status;
+    if (status === "confirmed") {
+      if (booking.status !== "pending") {
+        return next(
+          new AppError("Only pending bookings can be confirmed", 400, "INVALID_STATUS")
+        );
+      }
+      booking.status = "confirmed";
+      booking.confirmedAt = new Date();
+      slot.status = "booked";
+    } else if (status === "cancelled") {
+      booking.status = "cancelled";
+      booking.cancelledBy = "admin";
+      booking.cancelledReason = cancelledReason || "";
+      booking.cancelledAt = new Date();
+      slot.status = "available";
+    }
+
     await booking.save();
+    await slot.save();
 
     res.json({
       success: true,
@@ -224,90 +293,23 @@ export const updateBookingStatus = async (req, res, next) => {
 
     (async () => {
       try {
-        if (status === "confirmed") {
-          const existingConfirmed = await Booking.findOne({
-            slotId: booking.slotId,
-            status: "confirmed",
-            _id: { $ne: booking._id },
-          });
+        const user = await User.findById(booking.userId);
+        if (!user?.email) return;
 
-          if (existingConfirmed) {
-            console.warn(
-              `Slot ${booking.slotId} already confirmed, skipping re-confirm`
-            );
-            return;
-          }
-
-          await Booking.updateMany(
-            {
-              slotId: booking.slotId,
-              _id: { $ne: booking._id },
-              status: { $ne: "cancelled" },
-            },
-            { $set: { status: "cancelled" } }
-          );
-
-          const otherBookings = await Booking.find({
-            slotId: booking.slotId,
-            _id: { $ne: booking._id },
-          }).lean();
-
-          const userIds = [
-            booking.userId,
-            ...otherBookings.map((b) => b.userId),
-          ].filter(Boolean);
-
-          const users = await User.find({ _id: { $in: userIds } }).lean();
-          const userMap = Object.fromEntries(
-            users.map((u) => [u._id.toString(), u])
-          );
-
-          const confirmedUser = userMap[booking.userId.toString()];
-          if (confirmedUser?.email) {
-            await sendBookingEmail(
-              confirmedUser.email,
-              confirmedUser.name,
-              slot.date,
-              slot.time,
-              booking.orderId,
-              "Confirmed"
-            );
-          }
-
-          await Promise.all(
-            otherBookings.map(async (b) => {
-              const u = userMap[b.userId.toString()];
-              if (u?.email) {
-                await sendBookingEmail(
-                  u.email,
-                  u.name,
-                  slot.date,
-                  slot.time,
-                  b.orderId,
-                  "Cancelled"
-                );
-              }
-            })
-          );
-        } else if (status === "cancelled") {
-          const user = await User.findById(booking.userId);
-          if (user?.email) {
-            await sendBookingEmail(
-              user.email,
-              user.name,
-              slot.date,
-              slot.time,
-              booking.orderId,
-              "Cancelled"
-            );
-          }
-        }
+        const label = status === "confirmed" ? "Confirmed" : "Cancelled";
+        await sendBookingEmail(
+          user.email,
+          user.name,
+          slot.date,
+          slot.time,
+          booking.orderId,
+          label
+        );
       } catch (err) {
-        console.error("Background task failed:", err);
+        console.error("Background email failed:", err);
       }
     })();
   } catch (err) {
-    console.error("Error in updateBookingStatus:", err);
     next(
       new AppError(
         "Failed to update booking status",
@@ -318,15 +320,11 @@ export const updateBookingStatus = async (req, res, next) => {
   }
 };
 
-// ============================================================
-// @desc    Get all bookings (Admin view, paginated, searchable)
-// @route   GET /api/admin/bookings
-// @access  Admin
-// ============================================================
 export const getAdminBookings = async (req, res, next) => {
   try {
-    if (req.user.role !== "admin")
+    if (req.user.role !== "admin") {
       return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+    }
 
     const { page = 1, limit = 20, date, search, status } = req.query;
     const pipeline = [];
@@ -366,6 +364,7 @@ export const getAdminBookings = async (req, res, next) => {
             { orderId: regex },
             { "slot.date": regex },
             { "slot.time": regex },
+            { "slot.gameTitle": regex },
           ],
         },
       });
@@ -402,7 +401,15 @@ export const getAdminBookings = async (req, res, next) => {
           notes: 1,
           createdAt: 1,
           updatedAt: 1,
-          slot: { date: 1, time: 1 },
+          slot: {
+            _id: 1,
+            date: 1,
+            time: 1,
+            gameTitle: 1,
+            gameImage: 1,
+            price: 1,
+            description: 1,
+          },
           user: { _id: 1, name: 1, email: 1 },
         },
       }
@@ -426,7 +433,6 @@ export const getAdminBookings = async (req, res, next) => {
       bookings,
     });
   } catch (err) {
-    console.error("Error in getAdminBookings:", err);
     next(
       new AppError(
         "Failed to get admin bookings",
@@ -437,16 +443,11 @@ export const getAdminBookings = async (req, res, next) => {
   }
 };
 
-// ============================================================
-// @desc    Get all confirmed bookings (Admin view, paginated, searchable)
-// @route   GET /api/admin/bookings/confirmed
-// @access  Admin
-// ============================================================
-
 export const getAdminConfirmedBookings = async (req, res, next) => {
   try {
-    if (req.user.role !== "admin")
+    if (req.user.role !== "admin") {
       return next(new AppError("Unauthorized", 401, "UNAUTHORIZED"));
+    }
 
     const { page = 1, limit = 20, date, search } = req.query;
 
@@ -472,6 +473,7 @@ export const getAdminConfirmedBookings = async (req, res, next) => {
       },
       { $unwind: "$user" },
     ];
+
     if (search) {
       const regex = new RegExp(search, "i");
       pipeline.push({
@@ -482,11 +484,14 @@ export const getAdminConfirmedBookings = async (req, res, next) => {
             { orderId: regex },
             { "slot.date": regex },
             { "slot.time": regex },
+            { "slot.gameTitle": regex },
           ],
         },
       });
     }
+
     pipeline.push({ $sort: { "slot.date": 1, "slot.time": 1 } });
+
     const totalResult = await Booking.aggregate([
       ...pipeline,
       { $count: "total" },
@@ -495,6 +500,7 @@ export const getAdminConfirmedBookings = async (req, res, next) => {
     const bookings = await Booking.aggregate(
       paginatePipeline(pipeline, page, limit)
     );
+
     res.json({
       success: true,
       total,
@@ -503,7 +509,6 @@ export const getAdminConfirmedBookings = async (req, res, next) => {
       bookings,
     });
   } catch (err) {
-    console.error("Error in getAdminConfirmedBookings:", err);
     next(
       new AppError(
         "Failed to get confirmed bookings",

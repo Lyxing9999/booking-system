@@ -1,4 +1,4 @@
-// app/admin/slots/page.jsx
+// app/user/slots/page.jsx
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { jwtVerify } from "jose";

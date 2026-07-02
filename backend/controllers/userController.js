@@ -1,4 +1,4 @@
-import User from "../models/User.js";
+import User, { THEME_IDS } from "../models/User.js";
 import Booking from "../models/Booking.js";
 import AppError from "../utils/errors.js";
 import bcrypt from "bcrypt";
@@ -24,13 +24,20 @@ export const getProfile = async (req, res, next) => {
 // ============================================================
 export const updateProfile = async (req, res, next) => {
   try {
-    const { name, email, currentPassword, newPassword } = req.body;
+    const { name, email, currentPassword, newPassword, theme } = req.body;
     const user = await User.findById(req.user.id);
     if (!user)
       return next(new AppError("User not found", 404, "USER_NOT_FOUND"));
 
     const updateData = {};
     if (name) updateData.name = name;
+
+    if (theme) {
+      if (!THEME_IDS.includes(theme)) {
+        return next(new AppError("Invalid theme", 400, "INVALID_THEME"));
+      }
+      updateData.theme = theme;
+    }
 
     // Prevent updating both email and password at once
     if (email && newPassword) {

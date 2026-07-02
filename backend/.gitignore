@@ -26,6 +26,10 @@ dump/
 dist/
 build/
 
+# Uploaded game images (keep directory via .gitkeep)
+uploads/*
+!uploads/.gitkeep
+
 # IDE/editor files
 .vscode/
 .idea/

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition } from "react";
 import {
-  Table,
+  Card,
   Tag,
   DatePicker,
   Input,
@@ -12,23 +12,25 @@ import {
   Modal,
   Form,
   Typography,
-  Dropdown,
+  Row,
+  Col,
+  Empty,
+  Spin,
 } from "antd";
-import { BookOutlined, DownOutlined } from "@ant-design/icons";
+import { BookOutlined } from "@ant-design/icons";
 import api from "../../lib/api";
 import { useRouter } from "next/navigation";
+import { getGameImageUrl, formatPrice } from "../../utils/image";
 
-export default function UserSlotsPageClient({ user }) {
+export default function UserSlotsPageClient() {
   const router = useRouter();
 
-  // ---------------- State ----------------
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [limit] = useState(10);
+  const [limit] = useState(12);
   const [total, setTotal] = useState(0);
   const [searchText, setSearchText] = useState("");
-  const [filterStatus, setFilterStatus] = useState(null);
   const [filterDate, setFilterDate] = useState(null);
 
   const [bookingModalVisible, setBookingModalVisible] = useState(false);
@@ -42,11 +44,9 @@ export default function UserSlotsPageClient({ user }) {
     error: (text) => messageApi.error(text, 3),
   };
 
-  // ---------------- Debounce ----------------
   function useDebounce(value, delay = 300) {
     const [debounced, setDebounced] = useState(value);
     useEffect(() => {
-      setLoading(true);
       const timer = setTimeout(() => setDebounced(value), delay);
       return () => clearTimeout(timer);
     }, [value, delay]);
@@ -54,18 +54,16 @@ export default function UserSlotsPageClient({ user }) {
   }
   const debouncedSearch = useDebounce(searchText);
 
-  // ---------------- Fetch Slots ----------------
-  const fetchSlots = async (p = 1, status = filterStatus) => {
+  const fetchSlots = async (p = 1) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: p, limit });
-      if (status) params.append("status", status);
       if (filterDate) params.append("date", filterDate.format("YYYY-MM-DD"));
       if (debouncedSearch) params.append("search", debouncedSearch);
 
-      const res = await api.get(`/slots/user?${params.toString()}`);
+      const res = await api.get(`/slots/user/available?${params.toString()}`);
       setSlots(res.data.slots || []);
-      setTotal(res.data.total || res.data.slots?.length || 0);
+      setTotal(res.data.total || 0);
       setPage(p);
     } catch (err) {
       notify.error(err?.response?.data?.message || "Failed to fetch slots");
@@ -74,11 +72,10 @@ export default function UserSlotsPageClient({ user }) {
     }
   };
 
-  // ---------------- Effects ----------------
-  useEffect(() => { fetchSlots(1); }, []);
-  useEffect(() => { fetchSlots(1); }, [filterDate, debouncedSearch, filterStatus]);
+  useEffect(() => {
+    fetchSlots(1);
+  }, [filterDate, debouncedSearch]);
 
-  // ---------------- Booking Modal ----------------
   const openBookingModal = (slot) => {
     setSelectedSlot(slot);
     setBookingModalVisible(true);
@@ -87,104 +84,170 @@ export default function UserSlotsPageClient({ user }) {
 
   const handleBooking = async (values) => {
     try {
-      await api.post("/bookings", { slotId: selectedSlot._id, notes: values.notes });
-      notify.success("Booking successful");
+      await api.post("/bookings/user", {
+        slotId: selectedSlot._id,
+        notes: values.notes,
+      });
+      notify.success("Booking created — waiting for confirmation");
       setBookingModalVisible(false);
       fetchSlots(page);
-    } catch {
-      notify.error("Booking failed");
+    } catch (err) {
+      notify.error(err?.response?.data?.message || "Booking failed");
     }
   };
 
-  // ---------------- Table Columns ----------------
-  const columns = [
-    { title: "Date", dataIndex: "date" },
-    { title: "Time", dataIndex: "time" },
-    {
-      title: "Status",
-      dataIndex: "status",
-      render: (status) => {
-        const colors = { available: "green", booked: "red", expired: "gray" };
-        const text = status === "available" ? "Available" : status === "booked" ? "Booked" : "Expired";
-        return <Tag color={colors[status] || "default"}>{text}</Tag>;
-      },
-    },
-    {
-      title: "Action",
-      render: (_, record) => (
-        <Button
-          type="primary"
-          icon={<BookOutlined />}
-          disabled={record.status !== "available"}
-          onClick={() => openBookingModal(record)}
-        >
-          Book
-        </Button>
-      ),
-    },
-  ];
+  const navigate = (path) => startTransition(() => router.push(path));
 
-  // ---------------- Status Dropdown ----------------
-  const statusMenu = {
-    items: [
-      { key: "all", label: "All" },
-      { key: "available", label: "Available" },
-      { key: "booked", label: "Booked" },
-    ],
-    onClick: ({ key }) => setFilterStatus(key === "all" ? null : key),
-  };
-
-  const getDropdownLabel = () =>
-    filterStatus === "available" ? "Available" : filterStatus === "booked" ? "Booked" : "All";
-
-  // ---------------- Render ----------------
   return (
-    <div className="p-6">
+    <div className="p-6 themed-page">
       {contextHolder}
+
       <Space className="mb-6" wrap size={[8, 8]}>
-        <Button type="primary" onClick={() => fetchSlots(1)}>Available Slots</Button>
+        <Button type="primary">Available PS5 Slots</Button>
+        <Button onClick={() => navigate("/user/bookings")}>My Bookings</Button>
       </Space>
 
-      <Space className="mb-4" wrap size={[8, 8]}>
-        <DatePicker value={filterDate} onChange={setFilterDate} placeholder="Filter by date" />
-        <Input placeholder="Search time" value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 200 }} allowClear />
-        <Dropdown menu={statusMenu}>
-          <Button>{getDropdownLabel()} <DownOutlined /></Button>
-        </Dropdown>
-        <Button onClick={() => { setFilterDate(null); setSearchText(""); setFilterStatus(null); fetchSlots(1); }}>Reset</Button>
+      <h2 className="text-2xl font-semibold mb-4">Available PS5 Slots</h2>
+
+      <Space className="mb-6" wrap size={[8, 8]}>
+        <DatePicker
+          value={filterDate}
+          onChange={setFilterDate}
+          placeholder="Filter by play date"
+        />
+        <Input
+          placeholder="Search game or time"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          style={{ width: 220 }}
+          allowClear
+        />
+        <Button
+          onClick={() => {
+            setFilterDate(null);
+            setSearchText("");
+          }}
+        >
+          Reset
+        </Button>
       </Space>
 
-      <Table
-        rowKey="_id"
-        columns={columns}
-        dataSource={slots}
-        loading={loading || isPending}
-        pagination={{ current: page, pageSize: limit, total, onChange: (p) => fetchSlots(p, filterStatus), showTotal: (t) => `Total ${t} slots` }}
-        bordered
-        size="middle"
-        scroll={{ x: 'max-content' }}
-      />
+      <Spin spinning={loading || isPending}>
+        {slots.length === 0 && !loading ? (
+          <Empty description="No available PS5 slots right now" />
+        ) : (
+          <Row gutter={[16, 16]}>
+            {slots.map((slot) => (
+              <Col xs={24} sm={12} lg={8} xl={6} key={slot._id}>
+                <Card
+                  hoverable
+                  cover={
+                    <img
+                      alt={slot.gameTitle}
+                      src={getGameImageUrl(slot.gameImage)}
+                      style={{ height: 180, objectFit: "cover" }}
+                    />
+                  }
+                  actions={[
+                    <Button
+                      key="book"
+                      type="primary"
+                      icon={<BookOutlined />}
+                      onClick={() => openBookingModal(slot)}
+                    >
+                      Book Now
+                    </Button>,
+                  ]}
+                >
+                  <Card.Meta
+                    title={
+                      <Space>
+                        {slot.gameTitle}
+                        <Tag color="green">Available</Tag>
+                      </Space>
+                    }
+                    description={
+                      <div className="space-y-1 mt-2">
+                        {slot.description && (
+                          <Typography.Paragraph
+                            type="secondary"
+                            ellipsis={{ rows: 2 }}
+                            style={{ marginBottom: 8 }}
+                          >
+                            {slot.description}
+                          </Typography.Paragraph>
+                        )}
+                        <div>
+                          <strong>Play Date:</strong> {slot.date}
+                        </div>
+                        <div>
+                          <strong>Play Time:</strong> {slot.time}
+                        </div>
+                        <div>
+                          <strong>Price:</strong> {formatPrice(slot.price)}/hr
+                        </div>
+                      </div>
+                    }
+                  />
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        )}
+      </Spin>
+
+      {total > limit && (
+        <div className="mt-6 flex justify-center gap-2">
+          <Button disabled={page <= 1} onClick={() => fetchSlots(page - 1)}>
+            Previous
+          </Button>
+          <span className="self-center">
+            Page {page} of {Math.ceil(total / limit)}
+          </span>
+          <Button
+            disabled={page >= Math.ceil(total / limit)}
+            onClick={() => fetchSlots(page + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
 
       <Modal
         title={
           <Space>
-            <BookOutlined style={{ color: "#1890ff" }} />
+            <BookOutlined style={{ color: "var(--theme-accent)" }} />
             <Typography.Title level={5} style={{ margin: 0 }}>
-              Book Slot {selectedSlot?.date} {selectedSlot?.time}
+              Book {selectedSlot?.gameTitle}
             </Typography.Title>
           </Space>
         }
         open={bookingModalVisible}
         onCancel={() => setBookingModalVisible(false)}
-        okText="Book"
+        okText="Confirm Booking"
         onOk={() => form.submit()}
         destroyOnClose
         centered
-        bodyStyle={{ padding: "24px 32px" }}
       >
+        {selectedSlot && (
+          <div className="mb-4">
+            <img
+              src={getGameImageUrl(selectedSlot.gameImage)}
+              alt={selectedSlot.gameTitle}
+              style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8 }}
+            />
+            <p className="mt-2 mb-0">
+              {selectedSlot.date} · {selectedSlot.time} ·{" "}
+              {formatPrice(selectedSlot.price)}/hr
+            </p>
+          </div>
+        )}
         <Form form={form} layout="vertical" onFinish={handleBooking}>
-          <Form.Item label="Notes" name="notes">
-            <Input.TextArea placeholder="Write your notes (optional)" autoSize={{ minRows: 3, maxRows: 6 }} />
+          <Form.Item label="Notes (optional)" name="notes">
+            <Input.TextArea
+              placeholder="e.g. I want to play with my friend"
+              autoSize={{ minRows: 3, maxRows: 6 }}
+            />
           </Form.Item>
         </Form>
       </Modal>

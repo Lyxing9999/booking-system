@@ -4,6 +4,8 @@ import cors from "cors";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
+import path from "path";
+import { fileURLToPath } from "url";
 
 import { setupSwagger } from "./config/swagger.js";
 import errorHandler from "./middleware/errorHandler.js";
@@ -18,11 +20,15 @@ import bookingRoutes from "./routes/bookings.js";
 
 dotenv.config({ path: "./backend/.env" });
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 
 // -------------------- Middlewares --------------------
 app.use(express.json());
 app.use(cookieParser());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // -------------------- CORS Setup --------------------
 const allowedOrigins = [

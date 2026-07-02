@@ -14,15 +14,16 @@ import {
   Select,
   Dropdown,
   Menu,
+  Avatar,
 } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import api from "../../lib/api";
 import DashboardLayout from "../../components/DashboardLayout";
+import { getGameImageUrl, formatPrice } from "../../utils/image";
 
 export default function UserBookingsPage() {
   const router = useRouter();
 
-  // ---------------- State ----------------
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filterDate, setFilterDate] = useState(null);
@@ -48,11 +49,9 @@ export default function UserBookingsPage() {
     error: (text) => messageApi.error(text, 3),
   };
 
-  // ---------------- Debounce Hook ----------------
   function useDebounce(value, delay = 300) {
     const [debounced, setDebounced] = useState(value);
     useEffect(() => {
-      setLoading(true);
       const handler = setTimeout(() => setDebounced(value), delay);
       return () => clearTimeout(handler);
     }, [value, delay]);
@@ -60,7 +59,6 @@ export default function UserBookingsPage() {
   }
   const debouncedSearch = useDebounce(searchText);
 
-  // ---------------- Fetch Bookings ----------------
   const fetchBookings = async (pageNum = 1) => {
     setLoading(true);
     try {
@@ -80,7 +78,6 @@ export default function UserBookingsPage() {
     }
   };
 
-  // ---------------- Fetch Available Slots ----------------
   const fetchAvailableSlots = async () => {
     try {
       const res = await api.get("/slots/user/available");
@@ -90,7 +87,6 @@ export default function UserBookingsPage() {
     }
   };
 
-  // ---------------- Effects ----------------
   useEffect(() => {
     fetchBookings();
     fetchAvailableSlots();
@@ -104,7 +100,6 @@ export default function UserBookingsPage() {
     fetchBookings(1);
   }, [filterDate, debouncedSearch, filterStatus]);
 
-  // ---------------- Actions ----------------
   const handleReset = () => {
     setFilterDate(null);
     setSearchText("");
@@ -113,7 +108,7 @@ export default function UserBookingsPage() {
   };
 
   const handleCancel = (booking) => {
-    if (booking.status === "confirmed" || booking.status === "cancelled") {
+    if (booking.status !== "pending") {
       notify.error("Cannot cancel after admin confirmed/cancelled");
       return;
     }
@@ -128,8 +123,8 @@ export default function UserBookingsPage() {
       await api.delete(`/bookings/user/${selectedBooking._id}`);
       notify.success("Booking cancelled successfully!");
       fetchBookings(page);
-    } catch {
-      notify.error("Failed to cancel booking");
+    } catch (err) {
+      notify.error(err?.response?.data?.message || "Failed to cancel booking");
     } finally {
       setCancelLoading(false);
       setShowCancelModal(false);
@@ -137,7 +132,7 @@ export default function UserBookingsPage() {
   };
 
   const handleEdit = (booking) => {
-    if (booking.status === "confirmed" || booking.status === "cancelled") {
+    if (booking.status !== "pending") {
       notify.error("Cannot edit after admin confirmed/cancelled");
       return;
     }
@@ -157,37 +152,67 @@ export default function UserBookingsPage() {
       });
       notify.success("Booking updated successfully!");
       fetchBookings(page);
-    } catch {
-      notify.error("Failed to update booking");
+    } catch (err) {
+      notify.error(err?.response?.data?.message || "Failed to update booking");
     } finally {
       setEditLoading(false);
       setShowEditModal(false);
     }
   };
 
-  // ---------------- Table Columns ----------------
+  const statusLabel = (status) => {
+    if (status === "pending") return "Waiting for Confirmation";
+    if (status === "confirmed") return "Confirmed";
+    if (status === "cancelled") return "Cancelled";
+    return status;
+  };
+
   const columns = [
-    { title: "Date", dataIndex: "date", key: "date" },
-    { title: "Time", dataIndex: "time", key: "time" },
+    {
+      title: "Game",
+      key: "game",
+      render: (_, record) => (
+        <Space>
+          <Avatar
+            shape="square"
+            size={48}
+            src={getGameImageUrl(record.gameImage)}
+          />
+          <span>{record.gameTitle || "PS5 Game"}</span>
+        </Space>
+      ),
+    },
+    { title: "Play Date", dataIndex: "date", key: "date" },
+    { title: "Play Time", dataIndex: "time", key: "time" },
+    {
+      title: "Price",
+      dataIndex: "price",
+      key: "price",
+      render: (price) => formatPrice(price),
+    },
     {
       title: "Notes",
       dataIndex: "notes",
       render: (text) =>
-        text ? <span>{text}</span> : <span style={{ color: "#999", fontStyle: "italic" }}>No notes</span>,
+        text ? (
+          <span>{text}</span>
+        ) : (
+          <span className="text-muted" style={{ fontStyle: "italic" }}>No notes</span>
+        ),
     },
     {
       title: "Status",
       render: (_, record) => {
-        let color = "gold";
-        let text = "PENDING";
-        if (record.status === "cancelled") {
-          color = "red";
-          text = "CANCELLED";
-        } else if (record.status === "confirmed") {
-          color = "green";
-          text = "CONFIRMED";
-        }
-        return <Tag color={color}>{text}</Tag>;
+        const colors = {
+          pending: "gold",
+          confirmed: "green",
+          cancelled: "red",
+        };
+        return (
+          <Tag color={colors[record.status] || "default"}>
+            {statusLabel(record.status)}
+          </Tag>
+        );
       },
     },
     {
@@ -196,7 +221,9 @@ export default function UserBookingsPage() {
         <Space>
           {record.status === "pending" && (
             <>
-              <Button danger onClick={() => handleCancel(record)}>Cancel</Button>
+              <Button danger onClick={() => handleCancel(record)}>
+                Cancel
+              </Button>
               <Button onClick={() => handleEdit(record)}>Edit</Button>
             </>
           )}
@@ -205,14 +232,13 @@ export default function UserBookingsPage() {
     },
   ];
 
-  // ---------------- Status Dropdown ----------------
   const statusMenu = (
     <Menu
       onClick={(e) => setFilterStatus(e.key === "all" ? null : e.key)}
       items={[
         { key: "all", label: "All" },
         { key: "confirmed", label: "Confirmed" },
-        { key: "pending", label: "Pending" },
+        { key: "pending", label: "Waiting for Confirmation" },
         { key: "cancelled", label: "Cancelled" },
       ]}
     />
@@ -220,45 +246,55 @@ export default function UserBookingsPage() {
 
   const getDropdownLabel = () => {
     switch (filterStatus) {
-      case "confirmed": return "Confirmed";
-      case "pending": return "Pending";
-      case "cancelled": return "Cancelled";
-      default: return "All";
+      case "confirmed":
+        return "Confirmed";
+      case "pending":
+        return "Waiting for Confirmation";
+      case "cancelled":
+        return "Cancelled";
+      default:
+        return "All";
     }
   };
 
-  // ---------------- Navigation ----------------
   const navigate = (path) => startTransition(() => router.push(path));
 
-  // ---------------- Render ----------------
   return (
     <DashboardLayout>
       {contextHolder}
-      <div className="p-6">
+      <div className="p-6 themed-page">
         <Space className="mb-6" wrap size={[8, 8]}>
-          <Button onClick={() => navigate("/user/slots")}>Available Slots</Button>
-          <Button type="primary" onClick={() => navigate("/user/bookings")}>My Bookings</Button>
+          <Button onClick={() => navigate("/user/slots")}>
+            Available PS5 Slots
+          </Button>
+          <Button type="primary" onClick={() => navigate("/user/bookings")}>
+            My Bookings
+          </Button>
         </Space>
 
         <h2 className="text-2xl font-semibold mb-4">My Bookings</h2>
 
-        {/* Filters */}
         <Space className="mb-4" wrap size={[8, 8]}>
-          <DatePicker value={filterDate} onChange={setFilterDate} placeholder="Filter by date" />
+          <DatePicker
+            value={filterDate}
+            onChange={setFilterDate}
+            placeholder="Filter by play date"
+          />
           <Input
-            placeholder="Search time"
+            placeholder="Search game or time"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 200 }}
+            style={{ width: 220 }}
             allowClear
           />
           <Dropdown overlay={statusMenu}>
-            <Button>{getDropdownLabel()} <DownOutlined /></Button>
+            <Button>
+              {getDropdownLabel()} <DownOutlined />
+            </Button>
           </Dropdown>
           <Button onClick={handleReset}>Reset</Button>
         </Space>
 
-        {/* Table */}
         <Table
           rowKey="_id"
           columns={columns}
@@ -273,11 +309,10 @@ export default function UserBookingsPage() {
           }}
           bordered
           size="middle"
-          scroll={{ x: 'max-content' }}
+          scroll={{ x: "max-content" }}
         />
       </div>
 
-      {/* Cancel Modal */}
       <Modal
         open={showCancelModal}
         title="Cancel Booking"
@@ -289,17 +324,17 @@ export default function UserBookingsPage() {
           <p>
             Are you sure you want to cancel this booking?
             <br />
-            <strong>{selectedBooking.date} — {selectedBooking.time}</strong>
+            <strong>
+              {selectedBooking.gameTitle} — {selectedBooking.date}{" "}
+              {selectedBooking.time}
+            </strong>
             <br />
             Status:{" "}
-            <Tag color={selectedBooking.status === "cancelled" ? "red" : selectedBooking.status === "confirmed" ? "green" : "gold"}>
-              {selectedBooking.status.toUpperCase()}
-            </Tag>
+            <Tag color="gold">{statusLabel(selectedBooking.status)}</Tag>
           </p>
         )}
       </Modal>
 
-      {/* Edit Modal */}
       <Modal
         open={showEditModal}
         title="Edit Booking"
@@ -309,25 +344,30 @@ export default function UserBookingsPage() {
       >
         {selectedBooking && (
           <>
-            <p>Current: {selectedBooking.date} — {selectedBooking.time}</p>
+            <p>
+              Current: {selectedBooking.gameTitle} — {selectedBooking.date}{" "}
+              {selectedBooking.time}
+            </p>
             <Select
               style={{ width: "100%", marginBottom: 12 }}
               value={editSlotId || selectedBooking.slotId?._id}
               onChange={setEditSlotId}
-              loading={loading}
               placeholder="Select available slot"
-              disabled={selectedBooking.status !== "pending"}
             >
-              {selectedBooking.slotId && selectedBooking.status === "pending" && (
-                <Select.Option key={selectedBooking.slotId._id} value={selectedBooking.slotId._id}>
-                  {selectedBooking.date} — {selectedBooking.time} (Current)
+              {selectedBooking.slotId && (
+                <Select.Option
+                  key={selectedBooking.slotId._id}
+                  value={selectedBooking.slotId._id}
+                >
+                  {selectedBooking.gameTitle} — {selectedBooking.date}{" "}
+                  {selectedBooking.time} (Current)
                 </Select.Option>
               )}
               {availableSlots
-                .filter(slot => slot._id !== selectedBooking.slotId?._id)
-                .map(slot => (
+                .filter((slot) => slot._id !== selectedBooking.slotId?._id)
+                .map((slot) => (
                   <Select.Option key={slot._id} value={slot._id}>
-                    {slot.date} — {slot.time}
+                    {slot.gameTitle} — {slot.date} — {slot.time}
                   </Select.Option>
                 ))}
             </Select>
@@ -336,7 +376,6 @@ export default function UserBookingsPage() {
               value={editNotes}
               onChange={(e) => setEditNotes(e.target.value)}
               placeholder="Update notes"
-              disabled={selectedBooking.status !== "pending"}
             />
           </>
         )}

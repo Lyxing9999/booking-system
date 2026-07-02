@@ -10,7 +10,7 @@ export const refreshAccessToken = async () => {
       const res = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
         {},
-        { withCredentials: true }
+        { withCredentials: true },
       );
 
       refreshingToken = null;
@@ -23,7 +23,7 @@ export const refreshAccessToken = async () => {
   } catch (err) {
     console.error("Refresh token failed:", err);
     refreshingToken = null;
-    window.location.href = "/auth/login";
+    // Let callers handle navigation on failure; return null to indicate failure
     return null;
   }
 };

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Form, Input, Button, message } from "antd";
+import { Form, Input, Button, message, Card, Typography } from "antd";
 import api from "../../lib/api";
 
 export default function RegisterPage() {
@@ -10,7 +10,6 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
 
-  // ---------------- Handle Registration ----------------
   const handleFinish = async (values) => {
     setLoading(true);
     try {
@@ -20,7 +19,6 @@ export default function RegisterPage() {
       );
       setTimeout(() => router.push("/auth/login"), 600);
     } catch (err) {
-      console.error(err);
       const errorMsg = err.response?.data?.message || "Something went wrong";
       messageApi.error(errorMsg);
     } finally {
@@ -28,19 +26,37 @@ export default function RegisterPage() {
     }
   };
 
-  // ---------------- Render ----------------
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50">
+    <div
+      className="flex min-h-screen items-center justify-center p-4"
+      style={{ background: "var(--theme-bg)" }}
+    >
       {contextHolder}
-      <div className="w-full max-w-md bg-white p-8 rounded shadow">
-        <h1 className="text-2xl font-bold mb-6 text-center">Register</h1>
+      <Card
+        className="w-full max-w-md rounded-xl shadow-lg"
+        style={{
+          background: "var(--theme-card)",
+          borderColor: "var(--theme-border)",
+        }}
+      >
+        <div className="text-center mb-2">
+          <Typography.Title
+            level={2}
+            style={{ margin: 0, color: "var(--theme-text)" }}
+          >
+            Join PS5 Booking
+          </Typography.Title>
+          <Typography.Text style={{ color: "var(--theme-text-muted)" }}>
+            Create an account to book play sessions
+          </Typography.Text>
+        </div>
 
         <Form
           layout="vertical"
           onFinish={handleFinish}
           autoComplete="off"
           requiredMark={false}
-          className="space-y-2"
+          className="mt-6"
         >
           <Form.Item
             label="Full Name"
@@ -70,23 +86,23 @@ export default function RegisterPage() {
           </Form.Item>
 
           <Form.Item>
-            <div className="flex flex-col gap-3">
-              <Button type="primary" htmlType="submit" block loading={loading}>
-                {loading ? "Registering..." : "Register"}
-              </Button>
+            <Button type="primary" htmlType="submit" block loading={loading}>
+              {loading ? "Registering..." : "Register"}
+            </Button>
+          </Form.Item>
 
-              <Button
-                block
-                type="default"
-                onClick={() => router.push("/auth/login")}
-                disabled={loading}
-              >
-                Login
-              </Button>
-            </div>
+          <Form.Item>
+            <Button
+              block
+              type="default"
+              onClick={() => router.push("/auth/login")}
+              disabled={loading}
+            >
+              Back to Login
+            </Button>
           </Form.Item>
         </Form>
-      </div>
+      </Card>
     </div>
   );
 }

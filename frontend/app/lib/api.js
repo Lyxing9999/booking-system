@@ -1,4 +1,5 @@
 import axios from "axios";
+import { refreshAccessToken } from "./refreshToken";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL,
@@ -13,18 +14,26 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-        return api(originalRequest);
-      } catch {
-        window.location.href = "/auth/login";
+        const refreshed = await refreshAccessToken();
+        if (refreshed) return api(originalRequest);
+        // refresh failed — redirect once (avoid redundant reload if already on login)
+        if (
+          typeof window !== "undefined" &&
+          window.location.pathname !== "/auth/login"
+        ) {
+          window.location.href = "/auth/login";
+        }
+      } catch (e) {
+        if (
+          typeof window !== "undefined" &&
+          window.location.pathname !== "/auth/login"
+        ) {
+          window.location.href = "/auth/login";
+        }
       }
     }
     return Promise.reject(err);
-  }
+  },
 );
 
 export default api;

@@ -54,7 +54,12 @@ describe("Booking Model - Direct DB operations", () => {
   let slot;
 
   beforeEach(async () => {
-    slot = await Slot.create({ date: "2025-11-10", time: "10:00 AM" });
+    slot = await Slot.create({
+      gameTitle: "Test Game",
+      gameImage: "/uploads/test.png",
+      date: "2025-11-10",
+      time: "10:00",
+    });
   });
 
   it("should create a booking and call sendBookingEmail", async () => {

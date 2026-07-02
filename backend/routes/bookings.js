@@ -62,6 +62,7 @@ router.get("/user", authenticate, getUserBookings);
  *         description: Slot or user not found
  */
 router.post("/", authenticate, createBooking);
+router.post("/user", authenticate, createBooking);
 
 /**
  * @swagger
